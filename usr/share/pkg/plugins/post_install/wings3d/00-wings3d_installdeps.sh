@@ -42,7 +42,8 @@ run() {
   # or packages not picked up because of weird names).
   case ${DISTRO_BINARY_COMPAT:-unknown} in
     debian)
-      pkg add libwxgtk3.0-0v5_3.0.2 libwx_base3.0-0v5_3.0.2
+      # add libwxgtk3.0 and libwxbase3.0-0v5
+      pkg add libwxgtk3.0-0v5_3.0.2  2>/dev/null
     ;;
     ubuntu) ;;
     trisquel) ;;

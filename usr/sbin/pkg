@@ -21,13 +21,18 @@
 
 {
 #==================  setup script vars  =====================#
-
 APPNAME="Pkg"
 APPVER="1.9.23"
 
 # get current locale settings
 USER_LANG=$LANG
 USER_LC_ALL=$LC_ALL
+
+#run as root only
+whoami=$(whoami)
+
+TMPDIR=/tmp/pkg/${whoami}/$$  # set the tmp dir
+mkdir -p "$TMPDIR" &>/dev/null
 
 SELF=$(basename "$0")      # this script
 QTAG=''                    # gets set to (y/n) if ASK=-true
@@ -36,13 +41,9 @@ LC_ALL=C                   # speed up
 EDITOR=${EDITOR:-vi}       # just in case
 PAGER=${PAGER:-less}       # just in case
 CURDIR="${PWD}"            # get current dir, before cd to WORKDIR
-TMPDIR=/tmp/pkg/${whoami}  # set the tmp dir
 REPO_DIR=~/.packages       # where the repo files live
 [ -d /var/packages ] && REPO_DIR=/var/packages
 export REPO_DIR
-
-#run as root only
-whoami=$(whoami)
 
 # set colours true by default
 green="\e[32m"; red="\e[91m"; magenta="\e[95m"; lightblue="\e[36m"; yellow="\e[93m"; bold="\e[1m"; endcolour="\e[0m"
@@ -5151,9 +5152,9 @@ run_plugins(){
       # source the plugin, to get its 'run' function
       source $plugin || return 1
 
-      # run the plugin
       echo -e "${yellow}Plugin/$hook/$(basename ${plugin})${endcolour}: "
-      run
+      # run the plugin
+      run  | sed 's/^/  /g'
     )
   done
 
