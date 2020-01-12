@@ -5114,6 +5114,9 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
   grep -v "^\$" ${REPO_DIR}/user-installed-packages | uniq > ${REPO_DIR}/user-installed-packages_clean
   mv ${REPO_DIR}/user-installed-packages_clean ${REPO_DIR}/user-installed-packages
 
+  # run any relevant post install plugins
+  run_plugins 'post_install'
+
   # puppy specific fixes for installed package
   postinstall_hacks "$PKGNAME" "$PKGNAME_ONLY" &
 
@@ -5122,6 +5125,37 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
 
   # go back to the dir we started in
   cd "$PREVDIR" || exit 1
+
+}
+
+run_plugins(){
+  [ -z "$1" ] && return 1
+
+  local hook="$1"
+  local hooks='init|pre_cmd|post_cmd|pre_install|post_install|pre_uninstall|post_uninstall|pre_build|post_build|exit'
+
+	echo "$hook" | grep -qE "$hooks" || return 1
+
+	if [ ! -d /usr/share/pkg/plugins/$hook/ ];then
+		return 1
+	fi
+
+  # run any post install plugins for this specific package
+  for plugin in /usr/share/pkg/plugins/$hook/*.sh /usr/share/pkg/plugins/$hook/${PKGNAME_ONLY}/*.sh /usr/share/pkg/plugins/$hook/${PKGNAME}/*.sh
+  do
+    # skip plugin if not a file
+    [ -f $plugin ] || continue
+    # skip plugin if not enabled
+    [ -x $plugin ] || continue
+    (
+      # source the plugin, to get its 'run' function
+      source $plugin || return 1
+
+      # run the plugin
+      echo -e "${yellow}Plugin/$hook/$(basename ${plugin})${endcolour}: "
+      run
+    )
+  done
 
 }
 
