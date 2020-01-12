@@ -5155,7 +5155,9 @@ run_plugins(){
         continue
       fi
 
-      echo -e "${yellow}Plugin/$hook/$(basename $(dirname $plugin))/$(basename ${plugin})${endcolour}: "
+      local plugin_name="$(echo "$plugin" | sed "s#/usr/share/pkg/plugins/##g")"
+      echo -e "${yellow}Plugin: ${plugin_name}${endcolour}: "
+
       # run the plugin
       ASK=$ASK FORCE=$FORCE run | sed 's/^/  /g'
     )
