@@ -31,6 +31,11 @@
 
 # ====================   Begin plugin  =======================
 
+# define some settings for this plugin that Pkg can use
+
+PLUGIN_REQUIRES_ASK=false       # if true, skip this plugin unless ASK=true (--ask was given)
+PLUGIN_REQUIRES_FORCE=false     # if true, skip this plugin unless FORCE=true (--force was given)
+
 # Pkg will execute the 'run' function after this script is sourced.
 # You can define other functions below and call them from 'run'.
 
@@ -43,7 +48,7 @@ run() {
   case ${DISTRO_BINARY_COMPAT:-unknown} in
     debian)
       # add libwxgtk3.0 and libwxbase3.0-0v5
-      pkg add libwxgtk3.0-0v5_3.0.2  2>/dev/null
+      pkg -q add libwxgtk3.0-0v5_3.0.2  2>/dev/null
     ;;
     ubuntu) ;;
     trisquel) ;;
