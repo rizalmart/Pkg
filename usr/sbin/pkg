@@ -51,6 +51,7 @@ green="\e[32m"; red="\e[91m"; magenta="\e[95m"; lightblue="\e[36m"; yellow="\e[9
 # ENVIRONMENT VARS, which may be overridden later
 [ -z "$PKGRC" ] && export PKGRC=${HOME}/.pkg/pkgrc      # config file for this script
 [ -z "$ASK"   ] && ASK=false                            # if true, ask user before doing stuff. Overridden by --ask
+[ -z "$ASK"   ] && PLUGIN_ASK="${ASK:-false}"           # if true, plugins will respect --ask, will making sure Pkg itself still only "asks once"
 [ -z "$QUIET" ] && QUIET=false                          # if true, hide output that doesnt log well in Xdialog, Gtkdialog, etc
 [ -z "$FORCE" ] && FORCE=false                          # if true, force (re)install/remove pkgs. Overridden by --force
 [ -z "$HIDE_INSTALLED" ] && export HIDE_INSTALLED=false # if true, hide installed pkgs from pkg searches (-n, -na, -ss, -ssa)
@@ -4504,9 +4505,6 @@ pkg_download(){                   # download a pkg ($1) to WORKDIR FUNCLIST
         break
       fi
 
-      # only ask once
-      ASK=false
-
       echo # start a new line
 
       # get the subdir (from repo line) that the package lives in
@@ -4785,9 +4783,6 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
 
   # print new line if we didnt take any user input on tty
   [ "$ASK" != true ] && echo
-
-  # only ask once
-  ASK=false
 
   #if [ "`pkg_contents "$PKGFILE" 2>/dev/null`" = '' ];then
   # error "$PKGFILE not a valid package."
@@ -5116,7 +5111,7 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
   mv ${REPO_DIR}/user-installed-packages_clean ${REPO_DIR}/user-installed-packages
 
   # run any relevant post install plugins
-  run_plugins 'post_install'
+  ASK=$PLUGIN_ASK FORCE=$FORCE run_plugins 'post_install'
 
   # puppy specific fixes for installed package
   postinstall_hacks "$PKGNAME" "$PKGNAME_ONLY" &
@@ -5152,9 +5147,17 @@ run_plugins(){
       # source the plugin, to get its 'run' function
       source $plugin || return 1
 
-      echo -e "${yellow}Plugin/$hook/$(basename ${plugin})${endcolour}: "
+      # plugin have settings, which define when they should run:
+      if [ "${PLUGIN_REQUIRES_ASK:-false}" = true ] && [ "$ASK" != true ];then
+        continue
+      fi
+      if [ "${PLUGIN_REQUIRES_FORCE:-false}" = true ] && [ "$FORCE" != true ];then
+        continue
+      fi
+
+      echo -e "${yellow}Plugin/$hook/$(basename $(dirname $plugin))/$(basename ${plugin})${endcolour}: "
       # run the plugin
-      run  | sed 's/^/  /g'
+      ASK=$ASK FORCE=$FORCE run | sed 's/^/  /g'
     )
   done
 
@@ -5452,9 +5455,6 @@ $PKGS"
 
     # user can now input which actual pkgs to get, chosen by number
     if [ "$ASK" = true ];then
-      # only ask once
-      ASK=false
-
       echo
       echo "Give the numbers of the packages you want to install,"
       echo -n "separated by a comma, or hit ENTER only to skip: "
@@ -5496,9 +5496,6 @@ pkg_get(){                        # find, download and install $1 and its deps F
   local PKGNAME_ONLY=$(get_pkg_name_only "$PKGNAME")
   local PKGLIST="${PKGNAME}"
   local pkg_builtin=''
-
-  # dont ask to download or install pkg or deps, as choose_pkg() already asked
-  ASK=false
 
   # exit if no valid pkg name
   [ ! "$PKGNAME" ] || [ "$PKGNAME" = "" ] || [ "$PKGNAME" = "-" ] && print_usage get && exit 1
@@ -5570,7 +5567,7 @@ pkg_get(){                        # find, download and install $1 and its deps F
     fi
 
     # DOWNLOAD PKG
-    pkg_download "$pkg_name"
+    ASK=false pkg_download "$pkg_name"
 
     # now lets find the downloaded package
     [ ! -f "$PKGFILE" ] && PKGFILE="$(find "$CURDIR" -maxdepth 1 -type f -name "$(get_pkg_filename "$pkg_name")")"
@@ -5596,7 +5593,7 @@ pkg_get(){                        # find, download and install $1 and its deps F
       #if [ "$(pkg_contents "$PKGFILE" 2>/dev/null)" != '' ];then
 
         #INSTALL PKG
-        pkg_install "${PKGFILE}"
+        ASK=false pkg_install "${PKGFILE}"
 
       #fi
 
@@ -5606,7 +5603,7 @@ pkg_get(){                        # find, download and install $1 and its deps F
     if [ "$(is_installed_pkg "$pkg_name")" = true ] || [ "${NO_INSTALL}" = true ];then
 
       # get the dependencies for this package
-      [ "$(has_deps $pkg_name)" = true ] && get_deps "${pkg_name}"
+      [ "$(has_deps $pkg_name)" = true ] && ASK=false get_deps "${pkg_name}"
 
     fi
 
@@ -6457,9 +6454,6 @@ get_deps(){                       # find, get and install the deps of pkgname ($
     # if user answered yes, we will now download (and maybe install) the deps
     if [ "$DEPCONFIRM" = "y" ] || [ "$FORCE" = true ];then
 
-      # only ask once
-      ASK=false
-
       # make a list of the deps, each on a new line for each dep/newline
       WARNLIBS='';
 
@@ -6520,7 +6514,7 @@ get_deps(){                       # find, get and install the deps of pkgname ($
         local DEPNAME=$(get_pkg_name "$DEP" 2>/dev/null)
 
         #DOWNLOAD THE PKG
-        pkg_download "$DEPNAME" 2>/dev/null
+        ASK=false pkg_download "$DEPNAME" 2>/dev/null
 
         # skip install unless NO_INSTALL=true
         if [ "${NO_INSTALL}" = false ];then
@@ -7538,7 +7532,7 @@ while [ $# != 0 ]; do # get all options ($# means all options)
           done
           break
         ;;
-        --ask|-a)         ASK=true ; QTAG="?  (y/N)";;
+        --ask|-a)         ASK=true ; PLUGIN_ASK=true; QTAG="?  (y/N)";;
         --quiet|-q)       QUIET=true ;;
         --force|-f)       FORCE=true ;;
         --no-color)       green='' red='' magenta='' lightblue='' yellow='' bold='' endcolour='' ;;
@@ -7575,7 +7569,7 @@ while [ $# != 0 ]; do # get all options ($# means all options)
         fi
       ;;
 
-      --ask|-a)         ASK=true ; QTAG="?  (y/N)";;
+      --ask|-a)         ASK=true ; PLUGIN_ASK=true; QTAG="?  (y/N)";;
       --quiet|-q)       QUIET=true ;;
       --force|-f)       FORCE=true ;;
       --no-color)       green='' red='' magenta='' lightblue='' yellow='' bold='' endcolour='' ;;
