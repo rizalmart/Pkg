@@ -78,20 +78,22 @@ error(){
 # for correct error output, trap commands early
 cleanup(){
   # shellcheck disable=SC2086
-  rm -f ${TMPDIR}/missing_dep* ${TMPDIR}/installed_pkg* ${TMPDIR}/all_dep* ${TMPDIR}/DEP_DONE /tmp/pkg/list_deps_busy ${TMPDIR}/pkg_file_list ${TMPDIR}/dependents_list ${TMPDIR}/DEP_DONE ${TMPDIR}/ldd_file_list &>/dev/null
-  rm -rf /tmp/pkg/build_pkg/ &>/dev/null
+  rm -f ${TMPDIR}/missing_dep* ${TMPDIR}/installed_pkg* ${TMPDIR}/all_dep* \
+    ${TMPDIR}/DEP_DONE /tmp/pkg/list_deps_busy ${TMPDIR}/pkg_file_list \
+    ${TMPDIR}/dependents_list ${TMPDIR}/DEP_DONE ${TMPDIR}/ldd_file_list \
+    ./build_pkg/ ~/pkg/build_pkg /tmp/pkg/build_pkg/ &>/dev/null
 
   # prevent double msg output if error=130 (user Ctrl-C)
   if [ -f /tmp/pkg/error130 ] && [ "$2" = '130' ];then
     exit "$2"
   fi
   # make the tmp dir we'll use
-  mkdir -p /tmp/pkg &>/dev/null
+  mkdir -p ${TMPDIR:-/tmp/pkg} &>/dev/null
   # only add line numbers if it was given
   [ "$1" != 'none' ] && lineno="line $1, " || lineno=''
   # get the right error msg
   case "$2" in
-  130) echo; msg="User cancelled operation!"; touch /tmp/pkg/error130;;
+  130) echo; msg="User cancelled operation!"; touch ${TMPDIR:-/tmp/pkg/}error130;;
   8)   msg="Package URL invalid.";;
   7)   msg="Package extraction failed.";;
   6)   msg="Missing package file.";;
@@ -256,6 +258,51 @@ rm -f /tmp/pkg/error130 &>/dev/null
 
 # if not first run, and no options given, print the help
 [ ! -f ~/.pkg/firstrun ] && [ "$1" = "" ] && $SELF -H && exit 1 #200913 more help by default
+
+run_plugins(){
+  [ -z "$1" ] && return 1
+
+  local hook="$1"
+  local hooks='init|pre_cmd|post_cmd|pre_install|post_install|pre_uninstall|post_uninstall|pre_build|post_build|exit'
+
+	echo "$hook" | grep -qE "$hooks" || return 1
+
+	if [ ! -d /usr/share/pkg/plugins/$hook/ ];then
+		return 1
+	fi
+
+  # run any post install plugins for this specific package
+  for plugin in /usr/share/pkg/plugins/$hook/*.sh /usr/share/pkg/plugins/$hook/${PKGNAME_ONLY}/*.sh /usr/share/pkg/plugins/$hook/${PKGNAME}/*.sh
+  do
+    # skip plugin if not a file
+    [ -f $plugin ] || continue
+    # skip plugin if not enabled
+    [ -x $plugin ] || continue
+    (
+      # source the plugin, to get its 'run' function
+      source $plugin || return 1
+
+      # plugin have settings, which define when they should run:
+      if [ "${PLUGIN_REQUIRES_ASK:-false}" = true ] && [ "$ASK" != true ];then
+        continue
+      fi
+      if [ "${PLUGIN_REQUIRES_FORCE:-false}" = true ] && [ "$FORCE" != true ];then
+        continue
+      fi
+
+      local plugin_name="$(echo "$plugin" | sed "s#/usr/share/pkg/plugins/##g")"
+      echo -e "${yellow}Plugin: ${plugin_name}${endcolour}: "
+
+      # run the plugin
+      ASK=$ASK FORCE=$FORCE run | sed 's/^/  /g'
+    )
+  done
+
+}
+
+# run any relevant plugins
+ASK=$PLUGIN_ASK FORCE=$FORCE run_plugins 'init'
+
 }
 #==================  setup script vars  =====================#
 
@@ -3306,6 +3353,9 @@ pkg_build(){                      # build package ($1) from source (see BUILDTOO
   # get pkg extension
   EX=$(get_pkg_ext "${1:=$EX}")
 
+  # run any relevant plugins
+  ASK=$PLUGIN_ASK FORCE=$FORCE run_plugins 'pre_build'
+
   # we do a different build method for each supported build tool
   case $BUILDTOOL in
 
@@ -3442,6 +3492,10 @@ pkg_build(){                      # build package ($1) from source (see BUILDTOO
     echo "And Tmans buildpet should be installed to /usr/share/buildpet"
   ;;
   esac
+
+  # run any relevant plugins
+  ASK=$PLUGIN_ASK FORCE=$FORCE run_plugins 'post_build'
+
 }
 
 
@@ -4784,6 +4838,9 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
   # print new line if we didnt take any user input on tty
   [ "$ASK" != true ] && echo
 
+  # run any relevant plugins
+  ASK=$PLUGIN_ASK FORCE=$FORCE run_plugins 'pre_install'
+
   #if [ "`pkg_contents "$PKGFILE" 2>/dev/null`" = '' ];then
   # error "$PKGFILE not a valid package."
   # exit 1
@@ -5123,48 +5180,6 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
   cd "$PREVDIR" || exit 1
 
 }
-
-run_plugins(){
-  [ -z "$1" ] && return 1
-
-  local hook="$1"
-  local hooks='init|pre_cmd|post_cmd|pre_install|post_install|pre_uninstall|post_uninstall|pre_build|post_build|exit'
-
-	echo "$hook" | grep -qE "$hooks" || return 1
-
-	if [ ! -d /usr/share/pkg/plugins/$hook/ ];then
-		return 1
-	fi
-
-  # run any post install plugins for this specific package
-  for plugin in /usr/share/pkg/plugins/$hook/*.sh /usr/share/pkg/plugins/$hook/${PKGNAME_ONLY}/*.sh /usr/share/pkg/plugins/$hook/${PKGNAME}/*.sh
-  do
-    # skip plugin if not a file
-    [ -f $plugin ] || continue
-    # skip plugin if not enabled
-    [ -x $plugin ] || continue
-    (
-      # source the plugin, to get its 'run' function
-      source $plugin || return 1
-
-      # plugin have settings, which define when they should run:
-      if [ "${PLUGIN_REQUIRES_ASK:-false}" = true ] && [ "$ASK" != true ];then
-        continue
-      fi
-      if [ "${PLUGIN_REQUIRES_FORCE:-false}" = true ] && [ "$FORCE" != true ];then
-        continue
-      fi
-
-      local plugin_name="$(echo "$plugin" | sed "s#/usr/share/pkg/plugins/##g")"
-      echo -e "${yellow}Plugin: ${plugin_name}${endcolour}: "
-
-      # run the plugin
-      ASK=$ASK FORCE=$FORCE run | sed 's/^/  /g'
-    )
-  done
-
-}
-
 
 postinstall_hacks(){              # fix pkgs after installation
   local PKGNAME="$1"
@@ -5837,6 +5852,9 @@ pkg_uninstall(){                  # remove an installed package ($1) FUNCLIST
   # print new line if we didnt take any user input on tty
   [ "$ASK" != true ] && echo
 
+  # run any relevant plugins
+  ASK=$PLUGIN_ASK FORCE=$FORCE run_plugins 'pre_uninstall'
+
   # execute uninstall script.
   if [ -x "${REPO_DIR}/${PKGNAME}.remove" ];then
     ${REPO_DIR}/${PKGNAME}.remove &>/dev/null
@@ -5910,6 +5928,9 @@ pkg_uninstall(){                  # remove an installed package ($1) FUNCLIST
 
   # UNINSTALL DONE .. print message
   echo -e "${green}Uninstalled:${endcolour} $PKGNAME"
+
+  # run any relevant plugins
+  ASK=$PLUGIN_ASK FORCE=$FORCE run_plugins 'post_uninstall'
 
   # log uninstall with the system logs
   [ "$(which logger)" != '' ] && logger "$0 Package $PKGNAME uninstalled by $APP $APPVER"
@@ -7456,6 +7477,7 @@ first_run (){                     # welome message on first run
   exit 0
 }
 
+
 }
 #====================  main functions  ======================#
 
@@ -7740,5 +7762,8 @@ rm $TMPDIR/PKGSDONE $TMPDIR/DEP_DONE 2>/dev/null
 # reset lang options as we found them
 LANG=$USER_LANG
 LC_ALL=$USER_LC_ALL
+
+# run any relevant plugins
+ASK=$PLUGIN_ASK FORCE=$FORCE run_plugins 'exit'
 
 exit $code
