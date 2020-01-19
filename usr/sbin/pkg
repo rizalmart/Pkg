@@ -300,9 +300,6 @@ run_plugins(){
 
 }
 
-# run any relevant plugins
-ASK=$PLUGIN_ASK FORCE=$FORCE run_plugins 'init'
-
 }
 #==================  setup script vars  =====================#
 
@@ -7533,6 +7530,8 @@ first_run
 {
 #====================  main interface  ======================#
 
+# run any relevant plugins
+ASK=$PLUGIN_ASK FORCE=$FORCE run_plugins 'init'
 
 while [ $# != 0 ]; do # get all options ($# means all options)
    I=1
