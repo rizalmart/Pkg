@@ -263,7 +263,7 @@ run_plugins(){
   [ -z "$1" ] && return 1
 
   local hook="$1"
-  local hooks='init|pre_cmd|post_cmd|pre_install|post_install|pre_uninstall|post_uninstall|pre_build|post_build|exit'
+  local hooks='init|pre_install|post_install|pre_uninstall|post_uninstall|pre_build|post_build|exit'
 
 	echo "$hook" | grep -qE "$hooks" || return 1
 
