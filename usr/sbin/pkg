@@ -920,8 +920,12 @@ is_blacklisted_pkg(){             # return true if PKGNAME ($1) is blacklisted F
   # exit if no valid options
   [ ! "$1" ] || [ "$1" = "-" ] && exit 1
 
+  if [ "$PKGNAME_ONLY" = "" ];then
+    local PKGNAME_ONLY=$(get_pkg_name_only "$1")
+  fi
+
   # if we find an exact match of PKGNAME_ONLY in $PKG_BLACKLIST
-  if [ "$(echo "$PKG_BLACKLIST" | grep -E "^$(get_pkg_name_only "$1")\$")" != '' ];then
+  if [ "$(echo "$PKG_BLACKLIST" | grep -m1 -E "^$PKGNAME_ONLY\$")" != '' ];then
     echo true
     return 0
   fi
@@ -968,7 +972,7 @@ is_installed_pkg(){               # return true if PKGNAME ($1) is installed, el
 }
 
 
-is_builtin_pkg (){                # return true if $1 is a builtin pkg, else false FUNCLIST
+is_builtin_pkg(){                # return true if $1 is a builtin pkg, else false FUNCLIST
 
   # if $1 is an exact match of a pkg short name,
   # long name or file name in woof-installed-packages,
@@ -986,7 +990,11 @@ is_builtin_pkg (){                # return true if $1 is a builtin pkg, else fal
 
   # try again.. if user gave only partial name (geany-1.27), the above would fail
   if [ "$pkg_builtin" = '' ];then
-    pkg_name_only=$(get_pkg_name_only "$1")
+    pkg_name_only=$PKGNAME_ONLY
+
+    if [ "$pkg_name_only" = "" ];then
+      pkg_name_only=$(get_pkg_name_only "$1")
+    fi
 
     # so search for pkg_name* AND pkg_name_only (exact match, should be in field 2)
     if [ "$pkg_name_only" != '' ];then
@@ -4074,6 +4082,7 @@ pkg_combine(){                    # combine a pkg ($1) and deps into one single 
             -e "s# /opt# opt#g" \
             -e "s# /sbin# sbin#g" \
             -e "s# /usr# usr#g" \
+            -e "s# /proc# proc#g" \
             -e "s# /var# var#g" >> "$pinstall_file"
 
         echo '' >> "$pinstall_file"
@@ -4298,10 +4307,14 @@ merge_pkg(){                      # merge the given comma-separated packages FUN
     # move the unpacked files into our new package dir
     PKGDIR="$(find $WORKDIR -maxdepth 1 -type d -name "${PKGNAME}*" | grep -v ${NEWPKGNAME})"
 
-    if [ ! -d "$PKGDIR" ];then
+    if [ -z "$PKGDIR" ] || [ ! -d "$PKGDIR" ];then
       echo -e "${red}Error${endcolour}: could not find extracted package dir '$PKGDIR'"
       return 1
     fi
+
+    # TODO here
+    # save pre/post install files for later - we'll combine
+    # each of them later
 
     cp -R "$PKGDIR"/* "$NEWPKGNAME"
     rm -rf "${PKGDIR:-?}/"
@@ -4317,6 +4330,11 @@ merge_pkg(){                      # merge the given comma-separated packages FUN
   find "${NEWPKGNAME}/"
   echo '--------------------------------'
   echo
+
+  # TODO here
+  # combine all any pre/post install files into a single file
+  # for each type (pre, post), and put the combined file(s) into
+  # the final, merged package
 
   # create the merged PET package
   dir2pet "${NEWPKGNAME}/" || error "Could not create $NEWPKGNAME} PET file"
@@ -5824,7 +5842,7 @@ pkg_uninstall(){                  # remove an installed package ($1) FUNCLIST
 
   local pkg_is_blacklisted=$(is_blacklisted_pkg "$PKGNAME_ONLY")
 
-  # skip pkg if its a builtin
+  # skip pkg if its blacklisted
   [ "$pkg_is_blacklisted" = true ] && return 1
 
   local pkg_is_builtin=$(is_builtin_pkg "$PKGNAME_ONLY")
@@ -5832,11 +5850,15 @@ pkg_uninstall(){                  # remove an installed package ($1) FUNCLIST
   # skip pkg if its a builtin
   [ "$pkg_is_builtin" = true ] && return 1
 
-  local pkg_is_sfs_file="$(sfs_load -q -i | grep -v ^sfs_load | grep ^$PKGNAME)"
+  local pkg_is_sfs_file="$(grep -m1 "/$PKGNAME" /tmp/sfs_load/loop_device_list)"
 
   # if pkg is SFS, "uninstall" it here
   if [ "$pkg_is_sfs_file" != "" ] || [ "$pkg_ext" = "sfs" ];then
-    PKGNAME="$(sfs_load -q -i | grep -v ^sfs_load | grep ^$PKGNAME | head -1)"
+    NEW_PKGNAME="$(grep -m1 "/$PKGNAME" /tmp/sfs_load/loop_device_list 2>/dev/null | rev | cut -f1 -d'/' | rev)"
+    if [ "$NEW_PKGNAME" != "" ];then
+      PKGNAME=$NEW_PKGNAME
+    fi
+    #PKGNAME="$(sfs_load -q -i | grep -v ^sfs_load | grep ^$PKGNAME | head -1)" ## slooow
     sfs_load -q --cli -"${CURDIR}/${PKGNAME}" 2>/dev/null
     is_installed=true # we want to continue
   fi
@@ -5939,42 +5961,44 @@ pkg_uninstall(){                  # remove an installed package ($1) FUNCLIST
   # check if has menu entry
   grep -q -m1 ".desktop\$" "$PKGFILE" && HASMENUENTRY=true || HASMENUENTRY=false
 
-  # remove files listed in *.files
-  cat "$PKGFILE" | while read LINE
-  do
-    # some symlinks may not get removed. '-e' will not work if symlink
-    # is pointing to a non-existent file. So, check for symlink...
-    REMFILE=""
-    [ -h "$LINE" ] && REMFILE="yes"
-    [ -e "$LINE" ] && REMFILE="yes"
-    if [ "$REMFILE" = "yes" ];then
-      if [ ! -d "$LINE" ];then
-        if [ -e "/initrd/pup_ro2$LINE" ];then
-          # deleting the file on the top layer places a ".wh" whiteout file, that hides the original file.
-          # what we want is to remove the installed file, and restore the original pristine file...
-          cp -af "/initrd/pup_ro2${LINE}" "$LINE"
-        else
-          rm -f "$LINE" &>/dev/null
+  if [ "$pkg_is_sfs_file" = "" ];then
+    # remove files listed in *.files
+    sort -n "$PKGFILE" | while read LINE
+    do
+      # some symlinks may not get removed. '-e' will not work if symlink
+      # is pointing to a non-existent file. So, check for symlink...
+      REMFILE=""
+      [ -h "$LINE" ] && REMFILE="yes"
+      [ -e "$LINE" ] && REMFILE="yes"
+      if [ "$REMFILE" = "yes" ];then
+        if [ ! -d "$LINE" ];then
+          if [ -e "/initrd/pup_ro2$LINE" ];then
+            # deleting the file on the top layer places a ".wh" whiteout file, that hides the original file.
+            # what we want is to remove the installed file, and restore the original pristine file...
+            cp -af "/initrd/pup_ro2${LINE}" "$LINE"
+          else
+            rm -f "$LINE" &>/dev/null
+          fi
+          #delete empty dirs...
+          DELDIR="$(dirname "$LINE" 2>/dev/null)"
+          [ "$(ls -1 "$DELDIR")" = "" ] && rmdir "$DELDIR" &>/dev/null
         fi
-        #delete empty dirs...
-        DELDIR="$(dirname "$LINE" 2>/dev/null)"
-        [ "$(ls -1 "$DELDIR")" = "" ] && rmdir "$DELDIR" &>/dev/null
       fi
-    fi
-  done
+    done
 
-  # go through again and remove any empty dirs...
-  cat "$PKGFILE" 2>/dev/null  | while read LINE
-  do
-    DELDIR="$(dirname "$LINE" 2>/dev/null)"
-    [ -d "$DELDIR" ] && [ "$(ls -1 "$DELDIR")" = "" ] && rmdir "$DELDIR"
-    #check one level up... but do not delete top dir, like /opt...
-    DELLEVELS=$(echo -n "$DELDIR" | sed -e 's/[^/]//g' | wc -c | sed -e 's/ //g')
-    if [ $DELLEVELS -gt 2 ];then
-      DELDIR="$(dirname "$DELDIR" 2>/dev/null)"
-      [ -d "$DELDIR" ] && [ "$(ls -1 "$DELDIR")" = "" ] && rmdir $DELDIR
-    fi
-  done
+    # go through again and remove any empty dirs...
+    cat "$PKGFILE" 2>/dev/null  | while read LINE
+    do
+      DELDIR="$(dirname "$LINE" 2>/dev/null)"
+      [ -d "$DELDIR" ] && [ "$(ls -1 "$DELDIR")" = "" ] && rmdir "$DELDIR"
+      #check one level up... but do not delete top dir, like /opt...
+      DELLEVELS=$(echo -n "$DELDIR" | sed -e 's/[^/]//g' | wc -c | sed -e 's/ //g')
+      if [ $DELLEVELS -gt 2 ];then
+        DELDIR="$(dirname "$DELDIR" 2>/dev/null)"
+        [ -d "$DELDIR" ] && [ "$(ls -1 "$DELDIR")" = "" ] && rmdir $DELDIR
+      fi
+    done
+  fi
 
   # remove $PKGNAME from user-installed-packages
   NEWUSERPKGS="$(grep -v "^${PKGNAME}" ${REPO_DIR}/user-installed-packages)"
