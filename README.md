@@ -1,7 +1,6 @@
 # Pkg2
 
-The fork of sc0ttman's pkg
-a command line package manager for Puppy Linux
+The fork of sc0ttman's pkg. A command line package manager for Puppy Linux
 
 ## Enchancements from vanilla pkg
 - Ability to upgrade/downgrade installed packages
