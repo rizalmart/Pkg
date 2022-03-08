@@ -1,6 +1,14 @@
-# Pkg
+# Pkg2
 
+The fork of sc0ttman's pkg
 a command line package manager for Puppy Linux
+
+## Enchancements from vanilla pkg
+- Ability to upgrade/downgrade installed packages
+- Ability to rollback to builtin packages it the user was installed updated version of a package which was builtin in puppy but removed.
+- Ability to remove duplicate package files and replace with symlink.
+- Improved package installation and removal.
+- Highly configurable by modifying the variables inside pkg script (for advanced users only).
 
 ## Features
 
