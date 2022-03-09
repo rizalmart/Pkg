@@ -1,14 +1,24 @@
 #!/bin/ash
 # sc0ttman, GPL
+# Improved by mistfire
 # frontend for /usr/sbin/pkg (a command line package manager)
 
 ######## setup script ###########
 
 [ "`which pkg`" = "" ] && echo "Pkg not found." && exit 1
 
+
+###Paths
+export PKG_DATA_DIR=/tmp/pkgdialog
+
+export PKGS_DIR=/var/packages
+
+
+
 # speed up
 USER_LANG=$LANG
 USER_LC_ALL=$LC_ALL
+
 export LANG=C
 export LC_ALL=C
 
@@ -33,7 +43,7 @@ uninstallpkg () {
 }
 
 # hide first run message if needed
-[ -f $HOME/.pkg/firstrun ] && pkg -v &>/dev/null
+[ -f ${PKG_DATA_DIR}/firstrun ] && pkg -v &>/dev/null
 
 # set app name, title, version
 APPNAME="Pkgdialog"
@@ -43,9 +53,12 @@ BACKTITLE=""
 SEARCHTYPE='-ss'
 
 export SELF=$(basename $0)
-export TMPFILE=/tmp/pkgdialog_$(whoami)
+export PKG_TEMP_DIR=/tmp/pkgdialog
+export TMPFILE=${PKG_TEMP_DIR}/pkgdialog_$(whoami)
 export CURDIR="`pwd`"
 export WORKDIR=~/pkg
+
+mkdir -p ${PKG_TEMP_DIR} 2>/dev/null
 mkdir -p "$WORKDIR" 2>/dev/null # probably already exists
 
 # set dialog settings, set default as dialog, allow override
@@ -58,8 +71,9 @@ mkdir -p "$WORKDIR" 2>/dev/null # probably already exists
 APPTITLE="$APPNAME - package manager interface"
 
 # get repo details
-. ${HOME}/.pkg/pkgrc
-[ ! -f "${HOME}/.packages/$REPOFILE" -o ! -f "${HOME}/.pkg/sources" ] && pkg --repo noarch
+. ${PKG_DATA_DIR}/pkgrc
+
+[ ! -f "${PKGS_DIR}/$REPOFILE" -o ! -f "${PKG_DATA_DIR}/sources" ] && pkg --repo noarch
 
 
 
@@ -88,12 +102,12 @@ get_pkg_ext(){
 }
 
 help () {
-	echo '' > /tmp/pkgdialog_${whoami}_box_contents
-	npkg -H >> /tmp/pkgdialog_${whoami}_box_contents
+	echo '' > ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents
+	npkg -H >> ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents
 	$DIALOG $BACKTITLE --title "$APPTITLE" \
 	  --no-shadow --no-collapse \
 	  --exit-label "Return to menu" \
-	  --textbox /tmp/pkgdialog_${whoami}_box_contents 28 80
+	  --textbox ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents 28 80
 	main_menu
 }
 
@@ -166,11 +180,11 @@ Choose a package to compile (devx required) using $BUILDTOOL" 22 74 22 \
 
 choose_repo () {
 	# get repo details
-	. ${HOME}/.pkg/pkgrc
+	. ${PKG_DATA_DIR}/pkgrc
 	REPOLIST="`npkg --repo-list`"
 	REPOSFILE='' LIST=''
 	for REPO in $REPOLIST; do #loop through each repo available, build a list for dialog
-		REPOSFILE="`cat ${HOME}/.pkg/sources-all | grep -v "^#" | grep -v "^\$" | grep -m1 "^$REPO|" | cut -f3 -d'|'`"
+		REPOSFILE="`cat ${PKG_DATA_DIR}/sources-all | grep -v "^#" | grep -v "^\$" | grep -m1 "^$REPO|" | cut -f3 -d'|'`"
 		[ "$LIST" = "" ] && LIST="$REPO $REPOSFILE" || LIST="$LIST
 $REPO $REPOSFILE"
 	done
@@ -190,22 +204,22 @@ $LIST 2>$TMPFILE
 
 set_repos () {
 	# get repo details
-	. ${HOME}/.pkg/pkgrc
+	. ${PKG_DATA_DIR}/pkgrc
 	REPO2USE="`cat $TMPFILE 2>/dev/null`"
-	EXT=`cat ${HOME}/.pkg/sources-all  		| grep -m1 ^$REPO2USE | cut -f2 -d'|'`
-	FILE=`cat ${HOME}/.pkg/sources-all 		| grep -m1 ^$REPO2USE | cut -f3 -d'|'`
-	URL1=`cat ${HOME}/.pkg/sources-all 		| grep -m1 ^$REPO2USE | cut -f4 -d'|'`
-	URL2=`cat ${HOME}/.pkg/sources-all 		| grep -m1 ^$REPO2USE | cut -f5 -d'|'`
-	URL3=`cat ${HOME}/.pkg/sources-all 		| grep -m1 ^$REPO2USE | cut -f6 -d'|'`
-	URL4=`cat ${HOME}/.pkg/sources-all 		| grep -m1 ^$REPO2USE | cut -f7 -d'|'`
-	FALLBACKS=`cat ${HOME}/.pkg/sources-all 	| grep -m1  $REPO2USE | cut -f8 -d'|'`
+	EXT=`cat ${PKG_DATA_DIR}/sources-all  		| grep -m1 ^$REPO2USE | cut -f2 -d'|'`
+	FILE=`cat ${PKG_DATA_DIR}/sources-all 		| grep -m1 ^$REPO2USE | cut -f3 -d'|'`
+	URL1=`cat ${PKG_DATA_DIR}/sources-all 		| grep -m1 ^$REPO2USE | cut -f4 -d'|'`
+	URL2=`cat ${PKG_DATA_DIR}/sources-all 		| grep -m1 ^$REPO2USE | cut -f5 -d'|'`
+	URL3=`cat ${PKG_DATA_DIR}/sources-all 		| grep -m1 ^$REPO2USE | cut -f6 -d'|'`
+	URL4=`cat ${PKG_DATA_DIR}/sources-all 		| grep -m1 ^$REPO2USE | cut -f7 -d'|'`
+	FALLBACKS=`cat ${PKG_DATA_DIR}/sources-all 	| grep -m1  $REPO2USE | cut -f8 -d'|'`
 	# run dialog
 	[ "$REPO2USE" != "" ] && $DIALOG $BACKTITLE --title "$APPTITLE" --no-shadow --no-collapse --cancel-label "Back" --yesno "
 Do you want to use the '$REPO2USE' repository?
 
 Package Type: 		$EXT
-Repo file: 		/root/.packages/$FILE
-Total packages: 		`wc -l /root/.packages/$FILE | cut -f1 -d' '`
+Repo file: 		${PKGS_DIR}/$FILE
+Total packages: 		`wc -l ${PKGS_DIR}/$FILE | cut -f1 -d' '`
 
 Fallback order: $FALLBACKS
 " 0 0
@@ -227,11 +241,11 @@ show_pkgsetup () {
 	echo "These are your current settings:
 
 `npkg --show-config`
-" > /tmp/pkgdialog_${whoami}_box_contents
+" > ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents
 	$DIALOG $BACKTITLE --title "$APPTITLE" \
 	  --no-shadow --no-collapse \
 	  --exit-label "Return to menu" \
-	  --textbox /tmp/pkgdialog_${whoami}_box_contents 22 74
+	  --textbox ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents 22 74
 	# quit if 'Cancel' button used
 	RETVAL=$?
 	if [ $RETVAL -eq 1 -o $RETVAL -eq 255 ];then
@@ -299,9 +313,9 @@ $LIST 2>$TMPFILE
 
 	[ "$PKG2UPDATE" = '' ] && main_menu
 
-	echo '' > /tmp/pkgdialog_${whoami}_box_contents
-	npkg --pkg-update  "$PKG2UPDATE" >> /tmp/pkgdialog_${whoami}_box_contents &
-	$DIALOG $BACKTITLE --title "$APPTITLE" --no-shadow --no-collapse --exit-label "Return" --tailbox /tmp/pkgdialog_${whoami}_box_contents 19 70
+	echo '' > ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents
+	npkg --pkg-update  "$PKG2UPDATE" >> ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents &
+	$DIALOG $BACKTITLE --title "$APPTITLE" --no-shadow --no-collapse --exit-label "Return" --tailbox ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents 19 70
 	main_menu
 }
 
@@ -428,17 +442,17 @@ Choose a final package format for $LINE." 19 70 19 \
 		if [ $RETVAL -eq 1 -o $RETVAL -eq 255 ];then
 			continue
 		fi
-		echo '' > /tmp/pkgdialog_${whoami}_box_contents
+		echo '' > ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents
 		ACTION="`cat $TMPFILE 2>/dev/null`"
 		[ "$RESPKG_ACTION" = "download-and-combine" ] && npkg -d "${LINE//\"/}"
 		# repackage in chosen format
 		case $ACTION in
-		pet) npkg --pkg-combine "${LINE//\"/}" >> /tmp/pkgdialog_${whoami}_box_contents & ;;
-		sfs) npkg --sfs-combine "${LINE//\"/}" >> /tmp/pkgdialog_${whoami}_box_contents & ;;
+		pet) npkg --pkg-combine "${LINE//\"/}" >> ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents & ;;
+		sfs) npkg --sfs-combine "${LINE//\"/}" >> ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents & ;;
 		esac
 	done
 
-	$DIALOG $BACKTITLE --title "$APPTITLE" --no-shadow --no-collapse --exit-label "Return" --tailbox /tmp/pkgdialog_${whoami}_box_contents 19 70
+	$DIALOG $BACKTITLE --title "$APPTITLE" --no-shadow --no-collapse --exit-label "Return" --tailbox ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents 19 70
 	rm $TMPFILE 2>/dev/null
 	main_menu
 }
@@ -447,7 +461,7 @@ Choose a final package format for $LINE." 19 70 19 \
 convert_pkgs () {
 	rm $TMPFILE 2>/dev/null
 	# get repo details
-	. ${HOME}/.pkg/pkgrc
+	. ${PKG_DATA_DIR}/pkgrc
 
 	$DIALOG $BACKTITLE \
 	  --title "$APPTITLE" \
@@ -515,7 +529,7 @@ Convert a package from the '$REPONAME' repository." 22 74 22 $LINE 2>$TMPFILE
 
 choose_pkg_format () {
 	# get repo details
-	. ${HOME}/.pkg/pkgrc
+	. ${PKG_DATA_DIR}/pkgrc
 
 	PKG2CONVERT="`cat $TMPFILE 2>/dev/null| sed -e 's/\"//g' | tr ' ' '\n'`"
 
@@ -541,17 +555,17 @@ Convert $LINE, in '$REPONAME' repo, into another format." 22 74 22 \
 		fi
 		ACTION="`cat $TMPFILE 2>/dev/null`"
 
-		echo '' > /tmp/pkgdialog_${whoami}_box_contents
+		echo '' > ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents
 
 		# convert to chosen format
 		case $ACTION in
-		pet) OPT="--${EX}2pet" ; npkg $OPT $LINE >> /tmp/pkgdialog_${whoami}_box_contents &;;
-		sfs) npkg --pet2sfs $LINE >> /tmp/pkgdialog_${whoami}_box_contents &;;
-		tgz) npkg --pet2tgz $LINE >> /tmp/pkgdialog_${whoami}_box_contents &;;
+		pet) OPT="--${EX}2pet" ; npkg $OPT $LINE >> ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents &;;
+		sfs) npkg --pet2sfs $LINE >> ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents &;;
+		tgz) npkg --pet2tgz $LINE >> ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents &;;
 		esac
 	done
 
-	$DIALOG $BACKTITLE --title "$APPTITLE" --no-shadow --no-collapse --exit-label "Return" --tailbox /tmp/pkgdialog_${whoami}_box_contents 19 70
+	$DIALOG $BACKTITLE --title "$APPTITLE" --no-shadow --no-collapse --exit-label "Return" --tailbox ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents 19 70
 	rm $TMPFILE 2>/dev/null
 	main_menu
 }
@@ -578,15 +592,15 @@ Do you want to install '$PKG2INSTALL'?
 	RETVAL=$?; #[ "$RETVAL" = 1 ] && rm $TMPFILE 2>/dev/null && main_menu
 
 	if [ "$RETVAL" = 0 ];then #do it
-		echo '' > /tmp/pkgdialog_${whoami}_box_contents
-		getpkg "${PKG2INSTALL//.$EX/}".$EX >> /tmp/pkgdialog_${whoami}_box_contents &
+		echo '' > ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents
+		getpkg "${PKG2INSTALL//.$EX/}".$EX >> ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents &
 
 		$DIALOG $BACKTITLE \
 		  --title "$APPTITLE" \
 		  --no-shadow \
 		  --no-collapse \
 		  --exit-label "Return" \
-		  --tailbox /tmp/pkgdialog_${whoami}_box_contents 19 70
+		  --tailbox ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents 19 70
 	fi
 }
 
@@ -613,14 +627,14 @@ Do you want to uninstall '$PKG2UNINSTALL'?
 	RETVAL=$?; #[ "$RETVAL" = 1 ] && rm $TMPFILE 2>/dev/null && main_menu
 
 	if [ "$RETVAL" = 0 ];then #do it
-		echo '' > /tmp/pkgdialog_${whoami}_box_contents
-		uninstallpkg "$PKG2UNINSTALL" >> /tmp/pkgdialog_${whoami}_box_contents &
+		echo '' > ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents
+		uninstallpkg "$PKG2UNINSTALL" >> ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents &
 		$DIALOG $BACKTITLE \
 		  --title "$APPTITLE" \
 		  --no-shadow \
 		  --no-collapse \
 		  --exit-label "Return" \
-		  --tailbox /tmp/pkgdialog_${whoami}_box_contents 19 70
+		  --tailbox ${PKG_TEMP_DIR}/pkgdialog_${whoami}_box_contents 19 70
 	fi
 }
 
@@ -631,7 +645,7 @@ search_pkgs () {
 	[ -z "$SEARCHTYPE" ] && SEARCHTYPE="-ss"
 
 	# get repo details
-	. ${HOME}/.pkg/pkgrc
+	. ${PKG_DATA_DIR}/pkgrc
 
 	# if no pkg given
 	if [ "$1" = "" ];then
@@ -722,7 +736,7 @@ search_pkgs () {
 
 browse_pkgs () {
 	# get repo details
-	. ${HOME}/.pkg/pkgrc
+	. ${PKG_DATA_DIR}/pkgrc
 
 	$DIALOG $BACKTITLE --title "  $APPTITLE  " --no-shadow --no-collapse --cancel-label "Back" --menu "
 Choose a package category" 22 74 22 \
@@ -755,7 +769,7 @@ Choose a package category" 22 74 22 \
 
 main_menu () {
 	# get repo details
-	. ${HOME}/.pkg/pkgrc
+	. ${PKG_DATA_DIR}/pkgrc
 	#main menu
 	$DIALOG $BACKTITLE --title "$APPTITLE" --no-shadow --no-collapse --cancel-label "Exit" --menu "
 Choose an action for the '$REPONAME' repository." 22 74 22 \
@@ -825,6 +839,7 @@ LANG=$USER_LANG
 LC_ALL=$USER_LC_ALL
 
 rm $TMPFILE 2>/dev/null
+rm -rf ${PKG_TEMP_DIR} 2>/dev/null
 
 clear
 exit 0
