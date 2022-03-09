@@ -13,10 +13,13 @@
 #  exit 1
 #fi
 
+export PKGS_DIR=/var/packages
+export PKG_DATA_DIR=/root/.pkg
+
 #Consider /looking to see if /root/.packages/repo exists. See: https://github.com/s243a/woof-CE/blob/8e44442ca9144b202b73737101231115a87488f1/woof-code/rootfs-packages/PKG/usr/sbin/ppa2pup#L17
-[ -z "$REPO_DIR" ] && REPO_DIR="$(realpath $HOME/.packages)"
-[ -z "$REPO_DIR" ]  && REPO_DIR="$(readlink $HOME/.packages)"
-[ -z "$REPO_DIR" ]  && REPO_DIR="$HOME/.packages)"
+[ -z "$REPO_DIR" ] && REPO_DIR="$(realpath $PKGS_DIR)"
+[ -z "$REPO_DIR" ]  && REPO_DIR="$(readlink $PKGS_DIR)"
+[ -z "$REPO_DIR" ]  && REPO_DIR="$PKGS_DIR)"
 
 if [ ! "$1" ] || [ "$1" = "-h" ] || [ "$1" = "-help" ]
 then
@@ -207,7 +210,7 @@ do
         PPA_NAME="${PPA_NAME//-ubuntu/}"
         DUPED_PPA_NAME="$(grep -m1 "^$PPA_NAME|" $HOME/.pkg/sources-all | cut -f1 -d'|' 2>/dev/null)"
         if [ $PPA_NOT_YET_INSTALLED = false ] && [ "$DUPED_PPA_NAME" != "" ];then
-          EXISTING_PPA_NAME="$(grep -m1 "$repo_url" ~/.pkg/sources-all | cut -f1 -d'|')"
+          EXISTING_PPA_NAME="$(grep -m1 "$repo_url" ${PKG_DATA_DIR}/sources-all | cut -f1 -d'|')"
           if [ "$EXISTING_PPA_NAME" = "" ];then
             echo
             echo "The auto-generated repo name of '$PPA_NAME' is already taken, and may override other repos."
@@ -221,7 +224,7 @@ do
       elif [ $PPA_NOT_YET_INSTALLED = false ];then
         DUPED_PPA_NAME="$(grep -m1 "^$PPA_NAME|" $HOME/.pkg/sources-all | cut -f1 -d'|' 2>/dev/null)"
         if [ $PPA_NOT_YET_INSTALLED = false ] && [ "$DUPED_PPA_NAME" != "" ];then
-          EXISTING_PPA_NAME="$(grep -m1 "$repo_url" ~/.pkg/sources-all | cut -f1 -d'|')"
+          EXISTING_PPA_NAME="$(grep -m1 "$repo_url" ${PKG_DATA_DIR}/sources-all | cut -f1 -d'|')"
           if [ "$EXISTING_PPA_NAME" = "" ];then
             echo
             echo "The auto-generated repo name of '$PPA_NAME' is unsafe, and may override other repos."
@@ -248,7 +251,7 @@ do
   echo "   $repo_name"
   echo
   echo "Repo file to create:"
-  echo "   ~/.packages/$repo_filename"
+  echo "   $PKGS_DIR/$repo_filename"
   echo
 
   rm /tmp/$repo_filename &>/dev/null
@@ -320,7 +323,7 @@ function fixdepends(s,   p,a,dep_i,dep_split,pkg_i,ver_i,v,ineq,sout) {
     exit 1
   fi
 
-  mv  /tmp/${repo_filename}_sorted  ~/.packages/$repo_filename
+  mv  /tmp/${repo_filename}_sorted  $PKGS_DIR/$repo_filename
 
   echo "Success! File created."
   echo
@@ -329,17 +332,17 @@ function fixdepends(s,   p,a,dep_i,dep_split,pkg_i,ver_i,v,ineq,sout) {
   repo_entry="$repo_name|deb|$repo_filename|$repo_url||||$fallback_repos"
 
 
-  # if already added to ~/.pkg/sources[-all], remove it
-  if [ "$(cat ~/.pkg/sources     | grep -m1 "^$repo_name|")" != "" ] || \
-     [ "$(cat ~/.pkg/sources-all | grep -m1 "^$repo_name|")" != "" ];then
-    cat ~/.pkg/sources | grep -v "^$repo_name|" > /tmp/pkgsources
-    cat ~/.pkg/sources-all | grep -v "^$repo_name|" > /tmp/pkgsources-all
-    mv /tmp/pkgsources ~/.pkg/sources
-    mv /tmp/pkgsources-all ~/.pkg/sources-all
+  # if already added to ${PKG_DATA_DIR}/sources[-all], remove it
+  if [ "$(cat ${PKG_DATA_DIR}/sources     | grep -m1 "^$repo_name|")" != "" ] || \
+     [ "$(cat ${PKG_DATA_DIR}/sources-all | grep -m1 "^$repo_name|")" != "" ];then
+    cat ${PKG_DATA_DIR}/sources | grep -v "^$repo_name|" > /tmp/pkgsources
+    cat ${PKG_DATA_DIR}/sources-all | grep -v "^$repo_name|" > /tmp/pkgsources-all
+    mv /tmp/pkgsources ${PKG_DATA_DIR}/sources
+    mv /tmp/pkgsources-all ${PKG_DATA_DIR}/sources-all
   fi
 
 
-  # add repo entry to ~/.pkg/sources
+  # add repo entry to ${PKG_DATA_DIR}/sources
   pkg add-source "$repo_entry"
   echo
 
@@ -351,7 +354,7 @@ function fixdepends(s,   p,a,dep_i,dep_split,pkg_i,ver_i,v,ineq,sout) {
   echo
 
 
-  if [ "$(cat ~/.pkg/sources | grep -m1 "^$repo_name|")" != "" ];then
+  if [ "$(cat ${PKG_DATA_DIR}/sources | grep -m1 "^$repo_name|")" != "" ];then
     echo "Success! Repo added and available to use."
     echo
     echo "To use this repo, simply type the following and hit ENTER:"

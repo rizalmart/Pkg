@@ -10,6 +10,7 @@
 
 ###Paths
 export PKG_DATA_DIR=/root/.pkg
+
 export PKGS_DIR=/var/packages
 
 
@@ -46,7 +47,7 @@ uninstallpkg () {
 
 # set app name, title, version
 APPNAME="Pkgdialog"
-APPVER="2.0"
+APPVER="2.0.0"
 PKG_VER="`NO_COLOURS=true pkg -v`"
 BACKTITLE=""
 SEARCHTYPE='-ss'

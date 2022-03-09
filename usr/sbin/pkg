@@ -23,7 +23,7 @@
 {
 #==================  setup script vars  =====================#
 APPNAME="Pkg"
-APPVER="2.0"
+APPVER="2.0.0"
 
 #Path settings
 #BB_PATH="/usr/libexec/static/busybox" #custom busybox path
