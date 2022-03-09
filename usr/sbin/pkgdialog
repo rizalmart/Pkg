@@ -9,8 +9,7 @@
 
 
 ###Paths
-export PKG_DATA_DIR=/tmp/pkgdialog
-
+export PKG_DATA_DIR=/root/.pkg
 export PKGS_DIR=/var/packages
 
 
