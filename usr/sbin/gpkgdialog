@@ -27,7 +27,7 @@ set -a
 . ${PKG_DATA_DIR}/pkgrc
 
 export WORKDIR="$WORKDIR"
-export APPVER="0.5"
+export APPVER="2.0"
 export APPNAME="GPkgdialog $APPVER"
 export TEMPDIR=/tmp/gpkgdialog/`whoami`
 export AVAIL_LIST=$TEMPDIR/gpkgdialog-avail-list
