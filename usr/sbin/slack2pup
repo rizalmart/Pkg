@@ -1,10 +1,14 @@
 #!/bin/ash
+#Improved by mistfire
 
 # slack2pup
 # convert a Slackware PACKAGES.TXT repo file, into a Puppy compatible repo file.
 
 # @TODO1 - get package categories from /usr/local/petget/categories.dat
 # @TODO2 - fix field 11 of package entries (should show 'slackware64' on x64?)
+
+export PKGS_DIR=/var/packages
+export PKG_DATA_DIR=/root/.pkg
 
 . /etc/DISTRO_SPECS
 
@@ -70,15 +74,15 @@ done
 repo_name="$( echo "${repo_name// /-}" | tr '_' '-' | tr '[:upper:]' '[:lower:]' )"
 
 # if this repo is already added (its being updated), then we can get the repo filename
-repo_filename="$(cat ~/.pkg/sources-all | grep -m1 "^$repo_name|" | cut -f3 -d'|')"
+repo_filename="$(cat ${PKG_DATA_DIR}/sources-all | grep -m1 "^$repo_name|" | cut -f3 -d'|')"
 
 if [ "$DISTRO_BINARY_COMPAT" = "slackware" ];then
   slackware_version=$DISTRO_FILE_PREFIX
 else
-  slackware_version="$(cat /root/.packages/$repo_filename | head -1 | cut -f12 -d'|')"
+  slackware_version="$(cat ${PKGS_DIR}/$repo_filename | head -1 | cut -f12 -d'|')"
 fi
 
-# if we dont have a repo filename in ~/.pkg/sources-all, ask for one
+# if we dont have a repo filename in ${PKG_DATA_DIR}/sources-all, ask for one
 if [ "$(echo $repo_filename | grep '^Packages')" = "" ];then
   echo
   bash -c 'read -e -p "Enter a repo file name: " -i "Packages-slackware-$repo_name" repo_filename; echo $repo_filename > /tmp/pkg/repo_filename'
@@ -219,10 +223,10 @@ fi
 
 
 # repo file created - move it to the repo files dir
-mv /tmp/slackrepo /root/.packages/$repo_filename
+mv /tmp/slackrepo ${PKGS_DIR}/$repo_filename
 
 
-# build repo entry for ~/.pkg/sources
+# build repo entry for ${PKG_DATA_DIR}/sources
 repo_url="${1//PACKAGES.TXT.gz/}"
 repo_url="${repo_url//\/.gz/}"
 repo_url="${repo_url//.gz\//}"
@@ -233,21 +237,21 @@ repo_url="${repo_url//PACKAGES.TXT/}"
 if [ "$(echo "$repo_url" | grep -m1 "/$")" = '' ];then
   repo_url="${repo_url}/"
 fi
-# create the repo entry for ~/.pkg/sources
+# create the repo entry for ${PKG_DATA_DIR}/sources
 fallback_repos="$(pkg repo-list | grep -v $repo_name | tr '\n' ' ')"
 
 repo_entry="$repo_name|$pkg_ext|$repo_filename|$repo_url||||$fallback_repos"
 
-# if already added to ~/.pkg/sources[-all], remove it
-if [ "$(cat ~/.pkg/sources     | grep -m1 "^$repo_name|")" != "" ] || \
-   [ "$(cat ~/.pkg/sources-all | grep -m1 "^$repo_name|")" != "" ];then
-  cat ~/.pkg/sources | grep -v "^$repo_name|" > /tmp/pkgsources
-  cat ~/.pkg/sources-all | grep -v "^$repo_name|" > /tmp/pkgsources-all
-  mv /tmp/pkgsources ~/.pkg/sources
-  mv /tmp/pkgsources-all ~/.pkg/sources-all
+# if already added to ${PKG_DATA_DIR}/sources[-all], remove it
+if [ "$(cat ${PKG_DATA_DIR}/sources     | grep -m1 "^$repo_name|")" != "" ] || \
+   [ "$(cat ${PKG_DATA_DIR}/sources-all | grep -m1 "^$repo_name|")" != "" ];then
+  cat ${PKG_DATA_DIR}/sources | grep -v "^$repo_name|" > /tmp/pkgsources
+  cat ${PKG_DATA_DIR}/sources-all | grep -v "^$repo_name|" > /tmp/pkgsources-all
+  mv /tmp/pkgsources ${PKG_DATA_DIR}/sources
+  mv /tmp/pkgsources-all ${PKG_DATA_DIR}/sources-all
 fi
 
-# add repo entry to ~/.pkg/sources
+# add repo entry to ${PKG_DATA_DIR}/sources
 echo
 pkg add-source "$repo_entry"
 echo
@@ -260,7 +264,7 @@ pkg repo-info $repo_name
 echo
 
 
-if [ "$(cat ~/.pkg/sources | grep -m1 "^$repo_name|")" != "" ];then
+if [ "$(cat ${PKG_DATA_DIR}/sources | grep -m1 "^$repo_name|")" != "" ];then
   echo "Success! Repo added and available to use."
   echo
   echo "To use this repo, simply type the following and hit ENTER:"
