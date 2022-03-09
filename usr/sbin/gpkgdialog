@@ -9,8 +9,7 @@
 export PKG_DATA_DIR=/var/local/pkg
 export MAIN_PKG_DIR=/var/packages
 
-export REPO_DB_DIR=${MAIN_PKG_DIR}/repos
-
+export REPO_DB_DIR=${MAIN_PKG_DIR}
 
 [ -f ${PKG_DATA_DIR}/firstrun ] && pkg -v &>/dev/null
 
