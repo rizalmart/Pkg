@@ -6,7 +6,7 @@
 # hide first run message if needed
 
 
-export PKG_DATA_DIR=/var/local/pkg
+export PKG_DATA_DIR=/root/.pkg
 export MAIN_PKG_DIR=/var/packages
 
 export REPO_DB_DIR=${MAIN_PKG_DIR}
