@@ -47,7 +47,7 @@ uninstallpkg () {
 
 # set app name, title, version
 APPNAME="Pkgdialog"
-APPVER="0.6"
+APPVER="2.0"
 PKG_VER="`NO_COLOURS=true pkg -v`"
 BACKTITLE=""
 SEARCHTYPE='-ss'
