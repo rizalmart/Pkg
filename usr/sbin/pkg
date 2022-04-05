@@ -23,20 +23,20 @@
 {
 #==================  setup script vars  =====================#
 APPNAME="Pkg"
-APPVER="2.0.0"
+APPVER="2.0"
 
 #Path settings
-#BB_PATH="/usr/libexec/static/busybox" #custom busybox path
+BB_PATH="/usr/libexec/static/busybox" #custom busybox path
 #WGET_PATH="/usr/libexec/static/wget"
-#GREP_PATH="/usr/libexec/static/grep"
-#SED_PATH="/usr/libexec/static/sed"
-#CP_PATH="/usr/libexec/static/cp"
+GREP_PATH="/usr/libexec/static/grep"
+SED_PATH="/usr/libexec/static/sed"
+CP_PATH="/usr/libexec/static/cp"
 
 LAYEREDFS_FOLDER=/initrd
 
-PKG_DATA_DIR=/root/.pkg
+PKG_DATA_DIR=/var/local/pkg
 
-REPO_DIR=/root/.packages      # where the repo files live
+REPO_DIR=/var/packages      # where the repo files live
 
 REMOVE_SCRIPT_DIR=${REPO_DIR}/
 PKG_FILES_DIR=${REPO_DIR}/
@@ -105,6 +105,9 @@ export SED_PATH
 export CP_PATH
 export WGET_PATH
 
+if [ -L /bin ] || [ -L /lib ] || [ -L /lib64 ] || [ -L /lib32 ] || [ -L /libx32 ] || [ -L /sbin ]; then
+ export NEW_FHS="y"
+fi
 
 # set colours true by default
 green="\e[32m"; red="\e[91m"; magenta="\e[95m"; lightblue="\e[36m"; yellow="\e[93m"; bold="\e[1m"; endcolour="\e[0m"
@@ -913,7 +916,84 @@ get_pkg_name(){                   # return full pkg name (with version) from $1 
   # get the relevant repo contents (fields 1,2,8) from all repos,
   # then add pipes to line start/end for easier parsing later, then do
   # a basic search, for $pkg* (we'll refine it later), to avoid 'Argument list too long'..
-  cut -f1,2,8 $supported_repo_files ${REPO_DIR}/woof-installed-packages \
+  cut -f 1,2,8 ${REPO_DIR}/user-installed-packages ${REPO_DIR}/woof-installed-packages $supported_repo_files \
+    | sed \
+      -e "s/^/|/g" \
+      -e "s/$/|/g" 2>/dev/null \
+    | grep -i "|$pkg_name" > ${TMPDIR}/repo_contents
+
+
+  # get fields 1,2 and 8 (the 3 name fields) from all supported repo files, then
+  # add '|' to start and end of lines, then find exact match of $pkg_name..
+  # if no exact match, look for $pkg_name-*, then $pkg_name_*
+  if [ -f ${TMPDIR}/repo_contents ];then
+
+    full_name=$(  grep -m1 "|${pkg_name}|"      "${TMPDIR}/repo_contents" 2>/dev/null)  || \
+      full_name=$(grep -m1 "|${pkg_name//-*/}|" "${TMPDIR}/repo_contents" 2>/dev/null)  || \
+      full_name=$(grep -m1 "|${pkg_name//_*/}|" "${TMPDIR}/repo_contents" 2>/dev/null)  || \
+      full_name=$(grep -m1 "|${pkg_name}-"      "${TMPDIR}/repo_contents" 2>/dev/null)  || \
+      full_name=$(grep -m1 "|${pkg_name}_"      "${TMPDIR}/repo_contents" 2>/dev/null)  || \
+      full_name=$(grep -m1 "|${pkg_name}"       "${TMPDIR}/repo_contents" 2>/dev/null)  || \
+      full_name=$(grep -m1 "^${pkg_name}|"      "${TMPDIR}/repo_contents" 2>/dev/null)  || \
+      full_name=$(grep -m1 "^${pkg_name}-"      "${TMPDIR}/repo_contents" 2>/dev/null)  || \
+      full_name=$(grep -m1 "^${pkg_name}_"      "${TMPDIR}/repo_contents" 2>/dev/null)
+
+      full_name="${full_name//.pet/}"
+      full_name="${full_name//.${EX:-noextension}/}"
+      full_name="${full_name//.${pkg_ext:-noextension}/}"
+      full_name="${full_name//_amd64/}"
+      full_name="${full_name//_arm64/}"
+      full_name="${full_name//_armel/}"
+      full_name="${full_name//_armhf/}"
+      full_name="${full_name//_i[3-6]86/}"
+      full_name="${full_name//_x84_64/}"
+      full_name="${full_name//_all/}"
+  fi
+
+  rm ${TMPDIR}/repo_contents &>/dev/null
+  # if we found pkg in repo, keep only the package name ('|pkg-123|pkg|blah|' -> 'pkg-123')
+  [ "$full_name" != '' ] && full_name=$(echo $full_name| cut -f2 -d '|' | tr -d '|') || full_name="$pkg_name"
+
+  # if we have a package name, return it here and leave the func
+  [ "$full_name" != '' ] && echo $full_name && return 0
+
+  # if dealing with local files, .deb packages have the arch appended at
+  # the end, before the extension, so we'll need to remove that (if there)
+  pkg_name="${pkg_name//_amd64/}"
+  pkg_name="${pkg_name//_arm64/}"
+  pkg_name="${pkg_name//_armel/}"
+  pkg_name="${pkg_name//_armhf/}"
+  pkg_name="${pkg_name//_i[3-6]86/}"
+  pkg_name="${pkg_name//_x84_64/}"
+  pkg_name="${pkg_name//all/}"
+
+  # if no pkg found in repos, we cant translate/lookup its longer name,
+  # so just return what we got, without path, without pkg extension
+  [ "$full_name" = '' ] && basename "$pkg_name" .${pkg_ext:-${EX:-noextension}}
+}
+
+get_dlpkg_name(){                   # return full pkg name (with version) from $1 FUNCLIST
+
+  # get config settings, inc current repo file
+  . ${PKGRC}
+
+  local pkg_ext=''
+  local pkg_name=''
+  local full_name=''
+  local supported_repo_files=''
+
+  # get the extension of the given package name, if any
+  local pkg_ext=$(get_pkg_ext "$1")
+  # get the name without path and extension
+  local pkg_name="$(basename "$1" .${pkg_ext:-$EX})"
+
+  # get the repos files in the correct (fall back) order, then add file paths
+  supported_repo_files="$(repo_file_list | sed -e "s#^#${REPO_DB_DIR}/#g")"
+
+  # get the relevant repo contents (fields 1,2,8) from all repos,
+  # then add pipes to line start/end for easier parsing later, then do
+  # a basic search, for $pkg* (we'll refine it later), to avoid 'Argument list too long'..
+  cut -f 1,2,8 $supported_repo_files \
     | sed \
       -e "s/^/|/g" \
       -e "s/$/|/g" 2>/dev/null \
@@ -2403,7 +2483,7 @@ convert_repofile(){               # convert repo files formats (pre-woof/post-wo
     echo "Converting '${FILE}' to pre-woof format.. This might take a while.."
 
     # shellcheck disable=SC2002
-    cat "$FILE" | while read LINE
+    while IFS= read -r LINE
     do
       PKGNAME="$(echo $LINE| cut -f1 -d'|')"
       # we need to get the package name, try lots of different extensions
@@ -2433,7 +2513,8 @@ convert_repofile(){               # convert repo files formats (pre-woof/post-wo
       then
         echo "$PKGNAME|/$SUBDIR" >> $TMPDIR/${FILENAME}_subdirs
       fi
-    done
+    done < "$FILE" 
+    
     # done making a pre-woof repo file, print message
     [ -f $TMPDIR/$FILENAME ] && echo "Finished converting $FILENAME to pre-woof format." || exit 1
 
@@ -2444,7 +2525,7 @@ convert_repofile(){               # convert repo files formats (pre-woof/post-wo
 
     # parse a pre-woof repo file
     # shellcheck disable=SC2002
-    cat "$FILE" | while read LINE
+    while IFS= read -r LINE
     do
       PKGNAME='' PKGNAMEONLY='' PKGVER='' SIZE='' CAT='' DEPS='' BUILD='' SUBDIR='' PKGEXT='.pet' DESC=''
 
@@ -2486,7 +2567,8 @@ convert_repofile(){               # convert repo files formats (pre-woof/post-wo
       DESC="$(echo "$LINE" | cut -f10 -d'|')" #'micro
       # build the woof compatible repo file
       [ "$PKGNAME" != "" ] && echo "$PKGNAME|$PKGNAMEONLY|$VER|$BUILD|$CAT|$SIZE|$SUBDIR|${PKGNAME}${PKGEXT}|$DEPS|$DESC|$DISTRO_BINARY_COMPAT|$DISTRO_COMPAT_VERSION||" >> $TMPDIR/$FILENAME
-    done
+    done < "$FILE"
+    
     #done making a woof repo file, print message
     [ -f $TMPDIR/$FILENAME ] && echo "Finished converting $FILENAME to woof format." || exit 1
   fi
@@ -3109,7 +3191,7 @@ pkg_contents(){                   # list package ($1) contents FUNCLIST
     rm $TMPDIR/pkg_file_list 2>/dev/null
 
     # builtin files may not list full paths, parse it if needed
-    cat "${BUILTIN_PKG_DIR}/$PKGNAME_ONLY" 2>/dev/null | while read line
+    while IFS= read -r line
     do
       if [ "$(echo "$line" | grep ' ')" != '' ];then
         # parse it, so we get a full path to file on each line
@@ -3131,7 +3213,8 @@ pkg_contents(){                   # list package ($1) contents FUNCLIST
 
       # all should be ok, add the line to our list
       echo "$line_to_add" >> $TMPDIR/pkg_file_list
-    done
+    done < "${BUILTIN_PKG_DIR}/$PKGNAME_ONLY"
+
 
     # print formatted contents
     cat ${TMPDIR}/pkg_file_list 2>/dev/null
@@ -4653,7 +4736,7 @@ pkg_download(){                   # download a pkg ($1) to WORKDIR FUNCLIST
   # get pkg name with version (if given!), no extension or path
   PKGNAME="$(basename "$1" .$pkg_ext)"
   # get full package name from given pkg name string .. vlc -> vlc-1.2.3-blah
-  PKGNAME=$(get_pkg_name "$PKGNAME")
+  PKGNAME=$(get_dlpkg_name "$PKGNAME")
 
   # the file to save to.. not reliable till we checked the repos
   PKGFILE="${WORKDIR}/${PKGNAME}.$pkg_ext"
@@ -5146,6 +5229,24 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
 
   cd "${PKGNAME}/" 1>/dev/null || exit 1
 
+  #Fix file position for new linux FHS
+  if [ "$NEW_FHS" != "" ]; then
+       
+       echo "Fixing package content layout..."
+  
+       mkdir -p usr 2>/dev/null
+        
+       for fld3 in bin sbin lib lib64 lib32 libx32
+	   do
+		if [ -L /$fld3 ] && [ -d $fld3 ]; then
+		 mv -f $fld3 usr/
+		 sed -i -e 's#^\/'$fld3'#\/usr\/'$fld3'#g' ${PKG_FILES_DIR}/${PKGNAME}.files
+		fi
+	   done
+       
+  fi
+
+
   if [ -e /usr/share/pkg/fix-duplicates ]; then
    echo "Fixing file duplicates..."
    find "$(pwd)" -type d | xargs -i /usr/share/pkg/fix-duplicates '{}' > /dev/null
@@ -5199,7 +5300,7 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
       [ -z ${i} ] || [ ! -e /${i} ] && continue
       chmod +x /${i}
       cd /
-      #echo "Running $i ..."
+      echo "Running post-install script: $i ..."
       nohup sh ${i} &>/dev/null
       sleep 1
       rm -f ${i:-?}
@@ -5271,8 +5372,7 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
    # /usr/local/petget/removepreview.sh when uninstalling a pkg,
    # may have copied a file from sfs-layer to top, check...
    # shellcheck disable=SC2002
-   cat ${PKG_FILES_DIR}/${PKGNAME}.files |
-   while read ONESPEC
+   while IFS= read -r ONESPEC
    do
     [ "$ONESPEC" = "" ] && continue #precaution.
     if [ ! -d "$ONESPEC" ];then
@@ -5280,7 +5380,7 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
       rm -f "${PUP_WRITE_LAYER}${ONESPEC}"
      fi
     fi
-   done
+   done < ${PKG_FILES_DIR}/${PKGNAME}.files
    
    #now re-evaluate all the layers...
    $BB_PATH mount -t aufs -o remount,udba=reval unionfs / #remount with faster evaluation mode.
@@ -6497,7 +6597,7 @@ pkg_uninstall(){                  # remove an installed package ($1) FUNCLIST
   
   mv ${REPO_DIR}/user-installed-packages_clean ${REPO_DIR}/user-installed-packages
   
-  [ -e /usr/share/pkg/hacks-postinstall2.sh ] && . /usr/share/pkg/hacks-postinstall2.sh ${PKGFILE}
+  #[ -e /usr/share/pkg/hacks-postinstall2.sh ] && . /usr/share/pkg/hacks-postinstall2.sh ${PKGFILE}
   
   echo "Updating system cache..."
   
