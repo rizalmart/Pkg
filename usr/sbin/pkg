@@ -41,7 +41,7 @@ REPO_DIR=/var/packages      # where the repo files live
 REMOVE_SCRIPT_DIR=${REPO_DIR}/
 PKG_FILES_DIR=${REPO_DIR}/
 REPO_DB_DIR=${REPO_DIR}/
-PKG_SPECS_DIR=${REPO_DIR}/
+PKG_SPECS_DIR=${REPO_DIR}/package-specs
 BUILTIN_PKG_DIR=${REPO_DIR}/builtin_files
 
 PUP_WRITE_LAYER=${LAYEREDFS_FOLDER}/pup_rw
