@@ -246,3 +246,21 @@ if [ "$(echo "$PKGFILES" | grep -E "chrome|vivaldi|opera|chromium|brave|srware|r
  done
 
 fi
+
+
+if [ "$(echo "$PKGFILES" | grep "pipewire")" != "" ]; then
+ 
+ bname2="$(basename $PKGFILES .files)"
+
+ chmod -x /usr/bin/pulseaudio
+ chmod -x /usr/bin/start-pulseaudio-x11
+ chmod -x /etc/init.d/rc.pulseaudio
+
+echo '#!/bin/sh
+chmod +x /usr/bin/pulseaudio 
+chmod +x /usr/bin/start-pulseaudio-x11
+chmod +x /etc/init.d/rc.pulseaudio
+' > /var/packages/${bname2}.remove
+
+fi
+
