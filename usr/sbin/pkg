@@ -31,6 +31,7 @@ BB_PATH="/usr/libexec/static/busybox" #custom busybox path
 GREP_PATH="/usr/libexec/static/grep"
 SED_PATH="/usr/libexec/static/sed"
 CP_PATH="/usr/libexec/static/cp"
+#FILECMD_PATH="/usr/libexec/static/file"
 
 LAYEREDFS_FOLDER=/initrd
 
@@ -60,8 +61,88 @@ export BUILTIN_PKG_DIR
 USER_LANG=$LANG
 USER_LC_ALL=$LC_ALL
 
+if [ "$BB_PATH" != "" ] && [ -e $BB_PATH ]; then
+
+#need alternative grep, sed, wget otherwise a static binary
+
+for i in awk basename bc bzcat cat chmod chown chroot clear cmp comm cp cpio cut date dc dd df diff dirname \
+du echo egrep expr fgrep find gzip head id kill killall ln ls lzcat md5sum mkdir mktemp mount mv nohup pidof pwd readlink \
+realpath rev rm rmdir sleep sort stat su sync tac tail tee touch tr tty umount uniq wc whoami \
+which xargs; do
+alias "$i"="$BB_PATH $i"
+done
+
+else
+ [ "$BB_PATH" == "" ] && BB_PATH="busybox"
+fi
+
+[ -e "$GREP_PATH" ] && alias grep="$GREP_PATH"
+[ -e "$WGET_PATH" ] && alias wget="$WGET_PATH"
+[ -e "$SED_PATH" ] && alias sed="$SED_PATH"
+[ -e "$CP_PATH" ] && alias cp="$CP_PATH"
+[ -e "$FILECMD_PATH" ] && alias file="$FILECMD_PATH"
+
+
+export BB_PATH
+
+export GREP_PATH
+export SED_PATH
+export CP_PATH
+export WGET_PATH
+export FILECMD_PATH
+
+[ -z "$PATH" ] && export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
+
+[ -z "$XDG_DATA_DIRS" ] && export XDG_DATA_DIRS=/usr/lib/puppy/share:/usr/share:/usr/local/share
+
+if [ "$LD_LIBRARY_PATH" == "" ]; then
+
+	LD_LIBRARY_PATH32="/lib:/lib32:/libx32:/lib/i386-linux-gnu:/usr/lib:/usr/lib32:/usr/libx32:/usr/lib/i386-linux-gnu:/usr/local/lib:/usr/local/lib32:/usr/local/libx32:/usr/local/lib/i386-linux-gnu:/root/my-applications/lib"
+	LD_LIBRARY_PATH64="/lib:/lib64:/lib/x86_64-linux-gnu:/usr/lib:/usr/lib64:/usr/lib/x86_64-linux-gnu:/usr/local/lib:/usr/local/lib64:/usr/local/lib/x86_64-linux-gnu:/root/my-applications/lib"
+	LD_LIBRARY_PATH64_COMPAT="/lib32:/libx32:/lib/i386-linux-gnu:/usr/lib32:/usr/libx32:/usr/lib/i386-linux-gnu:/usr/local/lib32:/usr/local/libx32:/usr/local/lib/i386-linux-gnu"
+	
+	if [ -f /lib64/libc.so.6 ] || [ -f /lib/x86_64-linux-gnu/libc.so.6 ]; then #slackware64
+		LD_LIBRARY_PATH="${LD_LIBRARY_PATH64}:${LD_LIBRARY_PATH64_COMPAT}"
+	elif [ -f /lib/libc.so.6 ]; then
+	  if [ -L /lib/libc.so.6 ]; then
+	  
+	    ORIGFILE="$(readlink /lib/libc.so.6 2>/dev/null)"
+	    
+	    if [ "$(echo "$ORIGFILE" | grep '/')" == "" ]; then
+	     ORIGFILE="/lib/${ORIGFILE}"
+	    else
+	     ORIGFILE="$(realpath $ORIGFILE)"
+	    fi
+	    
+	    if [ "$(file "$ORIGFILE" | grep "64-bit")" != "" ]; then
+	     LD_LIBRARY_PATH="${LD_LIBRARY_PATH64}:${LD_LIBRARY_PATH64_COMPAT}"
+	    else
+	     LD_LIBRARY_PATH="$LD_LIBRARY_PATH32"
+	    fi
+	    
+	  else
+	   	if [ "$(file /lib/libc.so.6 | grep "64-bit")" != "" ]; then
+	     LD_LIBRARY_PATH="${LD_LIBRARY_PATH64}:${LD_LIBRARY_PATH64_COMPAT}"
+	    else
+	     LD_LIBRARY_PATH="$LD_LIBRARY_PATH32"
+	    fi
+	  fi
+	else
+		LD_LIBRARY_PATH="$LD_LIBRARY_PATH32"
+	fi
+
+	export LD_LIBRARY_PATH
+
+fi
+
+
+
 #run as root only
 whoami=$(whoami)
+
+[ "$whoami" != "root" ] && echo "You must be root to run Pkg." && exit 1
+
+[ ! -e ${PKG_SPECS_DIR} ] && mkdir -p ${PKG_SPECS_DIR}
 
 mkdir -p "/tmp/pkg/proc/pkg" &>/dev/null
 
@@ -77,33 +158,6 @@ EDITOR=${EDITOR:-vi}       # just in case
 PAGER=${PAGER:-less}       # just in case
 CURDIR="${PWD}"            # get current dir, before cd to WORKDIR
 
-
-if [ "$BB_PATH" != "" ] && [ -e $BB_PATH ]; then
-
-#need alternative grep, sed, wget otherwise a static binary
-
-for i in awk basename bc bzcat cat chmod chown chroot clear cmp comm cp cpio cut date dc dd df diff dirname \
-du echo egrep expr fgrep find gzip head id kill killall ln ls lzcat md5sum mkdir mktemp mount mv nohup pidof readlink \
-realpath rev rm rmdir sleep sort stat su sync tac tail tee touch tr tty umount uniq wc whoami \
-which xargs; do
-alias "$i"="$BB_PATH $i"
-done
-
-else
- [ "$BB_PATH" == "" ] && BB_PATH="busybox"
-fi
-
-[ -e "$GREP_PATH" ] && alias grep="$GREP_PATH"
-[ -e "$WGET_PATH" ] && alias wget="$WGET_PATH"
-[ -e "$SED_PATH" ] && alias sed="$SED_PATH"
-[ -e "$CP_PATH" ] && alias cp="$CP_PATH"
-
-export BB_PATH
-
-export GREP_PATH
-export SED_PATH
-export CP_PATH
-export WGET_PATH
 
 if [ -L /bin ] || [ -L /lib ] || [ -L /lib64 ] || [ -L /lib32 ] || [ -L /libx32 ] || [ -L /sbin ]; then
  export NEW_FHS="y"
@@ -179,7 +233,7 @@ cleanup(){
 
 trap 'cleanup ${LINENO:-none} $?' EXIT INT TERM
 
-[ "$whoami" != "root" ] && echo "You must be root to run Pkg." && exit 1
+
 
 #080413 make sure all config files are present, copy from /etc if need be
 if [ ! -f "${PKGRC}" ];then
@@ -467,105 +521,157 @@ func_list(){                      # list all functions available in this script 
 
 
 update_system_cache() {
+
   # $1 = PKGFILES [ex: ${REPO_DIR}/abiword.files]
   local PKGFILES=$1
 
-GTKVERLIST="2.0 3.0 4.0 5.0"
+GTKVERLIST="2.0 3.0 4.0 5.0 6.0"
 
 
-for usrfld in /usr /usr/local
+if [ "$XDG_DATA_DIRS" != "" ]; then
+ SHAREPATH=`echo $XDG_DATA_DIRS | tr ':' ' '`
+else
+ SHAREPATH="/usr/share /usr/local/share"
+fi
+
+if [ "$LD_LIBRARY_PATH" != "" ]; then
+ LIBDIRS=`echo $LD_LIBRARY_PATH | tr ':' ' '`
+else
+ LIBDIRS="/lib /usr/lib /usr/local/lib"
+fi
+
+FONT_FOUND=""
+PANGO_FOUND=""
+GDK_FOUND=""
+GTKIM_FOUND=""
+
+for usrfld in $SHAREPATH
 do
 
-  if grep -q -m 1 "$usrfld/share/glib-2.0/schemas" $PKGFILES ; then
-	 glib-compile-schemas $usrfld/share/glib-2.0/schemas 2>/dev/null
+  if grep -q -m 1 "$usrfld/glib-2.0/schemas" $PKGFILES ; then
+	  [ "$(which glib-compile-schemas)" != "" ] && glib-compile-schemas $usrfld/glib-2.0/schemas 2>/dev/null
   fi
 
-  if grep -q -m 1 "$usrfld/share/applications/" $PKGFILES ; then
-	  rm -f $usrfld/share/applications/mimeinfo.cache 2>/dev/null
-	  update-desktop-database $usrfld/share/applications 2>/dev/null
-  fi
-
-  if grep -q -m 1 "$usrfld/share/mime/" $PKGFILES ; then
-	update-mime-database $usrfld/share/mime 2>/dev/null
-	
-	if [ -e "$usrfld/share/mime/packages" ] && [ "$(ls -1 "$usrfld/share/mime/packages")" == "" ]; then
-	 rm -rf $usrfld/share/mime/*
+  if grep -q -m 1 "$usrfld/applications/" $PKGFILES ; then
+	if [ "$(which update-desktop-database)" != "" ] ; then
+	 rm -f $usrfld/applications/mimeinfo.cache 2>/dev/null
+	 update-desktop-database $usrfld/applications 2>/dev/null
 	fi
   fi
 
-  if grep -q -m 1 "$usrfld/lib/gio/modules" $PKGFILES ; then
-	 gio-querymodules $usrfld/lib/gio/modules 2>/dev/null
+  if grep -q -m 1 "$usrfld/mime/" $PKGFILES ; then
+  
+	[ "$(which update-mime-database)" != "" ] && update-mime-database $usrfld/mime 2>/dev/null
+	
+	if [ -e "$usrfld/mime/packages" ] && [ "$(ls -1 "$usrfld/mime/packages")" == "" ]; then
+	 rm -rf $usrfld/mime/*
+	fi
+	
   fi
 
-  if grep -q -m 1 "$usrfld/share/icons/" $PKGFILES ; then
+  if grep -q -m 1 "$usrfld/icons/" $PKGFILES ; then
+    
     for gtkcmd in gtk gtk4
     do
-     if [ -e /usr/bin/${gtkcmd}-update-icon-cache ] ; then  
-	  find "$usrfld/share/icons/" -name "icon-theme.cache" -type f | xargs -i rm -f '{}'
-	  find "$usrfld/share/icons/" -maxdepth 1 -mindepth 1 -type d | xargs -i ${gtkcmd}-update-icon-cache -f -i '{}' 2>/dev/null
+     if [ "$(which ${gtkcmd}-update-icon-cache)" != "" ] ; then  
+	  find "$usrfld/icons/" -name "icon-theme.cache" -type f | xargs -i rm -f '{}'
+	  find "$usrfld/icons/" -maxdepth 1 -mindepth 1 -type d | xargs -i ${gtkcmd}-update-icon-cache -f -i '{}' 2>/dev/null
 	  break
 	 fi
 	done
+	
   fi
   
- 
+  if [ "$(grep -m 1 '$usrfld/fonts/' $PKGFILES)" != "" ]; then
+   [ "$FONT_FOUND" == "" ] && FONT_FOUND="y"
+  fi
+
 done
 
 
-if [ "$(grep -m 1 '/usr/lib/gdk-pixbuf' $PKGFILES)" != "" ] || [ "$(grep -m 1 '/usr/local/lib/gdk-pixbuf' $PKGFILES)" != "" ]; then
-	if [ "$(which update-gdk-pixbuf-loaders)" != "" ]; then
+for libfld in $LIBDIRS
+do
+	
+	if grep -q -m 1 "$libfld/gio/modules" $PKGFILES ; then
+	 [ "$(which gio-querymodules)" != "" ] && gio-querymodules $libfld/gio/modules 2>/dev/null
+	fi
+		
+	if [ "$(grep -m 1 '$libfld/gdk-pixbuf' $PKGFILES)" != "" ]; then
+      [ "$GDK_FOUND" == "" ] && GDK_FOUND="y"
+ 	fi
+
+	if [ "$(grep -m 1 '$libfld/pango/' $PKGFILES)" != "" ]; then
+	  [ "$PANGO_FOUND" == "" ] && PANGO_FOUND="y"
+	fi
+
+    if [ "$(grep -m 1 "$libfld/gtk-$GTKVER" $PKGFILES | grep -m 1 "/immodules")" != "" ]; then
+      [ "$GTKIM_FOUND" == "" ] && GTKIM_FOUND="y"
+	fi
+
+done
+
+
+[ "$FONT_FOUND" != "" ] && fc-cache -f
+
+
+if [ "$GDK_FOUND" != "" ]; then
+	if [ "$(which update-gdk-pixbuf-loaders)" != "" ] ; then
 	 update-gdk-pixbuf-loaders
 	else
 	 gdk-pixbuf-query-loaders --update-cache 2>/dev/null
 	fi
 fi
 
-if [ "$(grep -m 1 '/usr/lib/pango/' $PKGFILES)" != "" ] || [ "$(grep -m 1 '/usr/local/lib/pango/' $PKGFILES)" != "" ]; then
-	if [ "$(which update-pango-querymodules)" != "" ]; then
+
+if [ "$PANGO_FOUND" != "" ]; then
+	if [ "$(which update-pango-querymodules)" != "" ] ; then
 		update-pango-querymodules
 	else
 		pango-querymodules --update-cache 2>/dev/null
 	fi
 fi
 
-for GTKVER in $GTKVERLIST
-do
-  if [ "$(grep -m 1 "/usr/lib/gtk-$GTKVER" $PKGFILES | grep -m 1 "/immodules")" != "" ] || [ "$(grep -m 1 "/usr/local/lib/gtk-$GTKVER" $PKGFILES | grep -m 1 "/immodules")" != "" ]; then
-	if [ "$(which update-gtk-immodules-$GTKVER)" != "" ]; then
-	  update-gtk-immodules-$GTKVER
-	else
-	  gtk-query-immodules-$GTKVER --update-cache 2>/dev/null
-	fi
-  fi
-done
 
-if [ "$(grep -m 1 '/usr/share/fonts/' $PKGFILES)" != "" ] || [ "$(grep -m 1 '/usr/local/share/fonts/' $PKGFILES)" != "" ]; then
-  fc-cache -f
+if [ "$GTKIM_FOUND" != "" ]; then
+	for GTKVER in $GTKVERLIST
+	do
+		if [ "$(which update-gtk-immodules-$GTKVER)" != "" ] ; then
+		  update-gtk-immodules-$GTKVER
+		else
+		  gtk-query-immodules-$GTKVER --update-cache 2>/dev/null
+		fi
+	done
+fi
+	
+
+
+if grep -q -m 1 "/etc/ld.so.conf.d/" $PKGFILES ; then
+  ldconfig
 fi
 
-[ "$(grep -m 1 '/gconv/' $PKGFILES)" != "" ] && iconvconfig 2>/dev/null
+if grep -q -m 1 "/lib/modules/$(uname -r)/" $PKGFILES ; then
+  depmod -a
+fi
 
-[ "$(grep -m 1 '/etc/ld.so.conf.d/' $PKGFILES)" != "" ] && ldconfig 2>/dev/null
-
-if grep -q -m 1 "/etc/dconf/db/" $PKGFILES ; then
-  dconf update 2>/dev/null
+if grep -q -m 1 "/gconv/" $PKGFILES ; then
+  iconvconfig 2>/dev/null
 fi
 
 if [ "$(grep -m 1 '/udev/hwdb.d/' $PKGFILES)" != "" ]; then
-  [ "$(udevadm --help 2>&1 | grep hwdb)" != "" ] && udevadm hwdb --update 2>/dev/null
+  [ "$(udevadm --help 2>&1 | grep hwdb)" != "" ] && udevadm hwdb --update
 fi
 
-[ "$(grep -m 1 '/udev/rules.d/' $PKGFILES)" != "" ] && udevadm control --reload-rules 2>/dev/null
+[ "$(grep -m 1 '/udev/rules.d/' $PKGFILES)" != "" ] && udevadm control --reload-rules
 
-if grep -q -m 1 "/lib/modules/$(uname -r)/" $PKGFILES ; then
-  depmod -a 2>/dev/null
+if grep -q -m 1 "/etc/dconf/db/" $PKGFILES ; then
+  dconf update
 fi
 
 
 if [ "$(grep -m 1 '/gstreamer' $PKGFILES | grep "/lib")" != "" ]; then
   GSTREG="registry.$(uname -m).bin"
-  find /home -type f -name "$GSTREG" | grep "gstreamer" | xargs -i rm -f '{}'
-  find /root -type f -name "$GSTREG" | grep "gstreamer" | xargs -i rm -f '{}'
+  find /home -type f -name "$GSTREG" | grep "gstreamer" | xargs -i rm -f {}
+  find /root -type f -name "$GSTREG" | grep "gstreamer" | xargs -i rm -f {}
   [ -f "$GST_REGISTRY" ] && rm -f "$GST_REGISTRY"
   [ -f "$GST_REGISTRY_1_0" ] && rm -f "$GST_REGISTRY_1_0"
 fi
@@ -5502,6 +5608,7 @@ if [ -f $line ]; then
    if [ "$(grep -E "${slinkpt}\$" ${PKG_FILES_DIR}/${PKGNAME}.files)" == "" ]; then
 
       srcf="$(readlink "$slink" 2>/dev/null)"
+      [ "$(echo $srcf | grep "/")" != "" ] && srcf="$(realpath $srcf)"
 
       if [ "$srcf" != "" ]; then
 
@@ -5672,7 +5779,8 @@ echo "Running post-install hacks (2nd pass)..."
 				while IFS= read -r xline
 				do
 				 
-				 lineptrn="$(echo "$xline" | sed -e 's#\/#\\\/#g' -e 's#\+#\\\+#g' -e 's#\-#\\\-#g' -e 's#\.#\\\.#g')"
+				 #lineptrn="$(echo "$xline" | sed -e 's#\/#\\\/#g' -e 's#\+#\\\+#g' -e 's#\-#\\\-#g' -e 's#\.#\\\.#g')"
+				 lineptrn=`echo $xline`
 				
 				 #Check if the file was a part of the newly installed package
 				 if [ "$(grep -m 1 "$lineptrn" ${PKG_FILES_DIR}/${PKGNAME}.files)" == "" ] && [ "$(grep -m 1 "$lineptrn" /tmp/pkg-files.list)" == "" ]; then
@@ -5729,7 +5837,8 @@ echo "Running post-install hacks (2nd pass)..."
 		 while IFS= read -r xline
 		 do
 		 
-		  lineptrn="$(echo "$xline" | sed -e 's#\/#\\\/#g' -e 's#\+#\\\+#g' -e 's#\-#\\\-#g' -e 's#\.#\\\.#g')"
+		  #lineptrn="$(echo "$xline" | sed -e 's#\/#\\\/#g' -e 's#\+#\\\+#g' -e 's#\-#\\\-#g' -e 's#\.#\\\.#g')"
+		  lineptrn=`echo $xline`
 		 
 		  #Check if the file was a part of the newly installed package
 		  if [ "$(grep -m 1 "$lineptrn" ${PKG_FILES_DIR}/${PKGNAME}.files)" == "" ] && [ "$(grep -m 1 "$lineptrn" /tmp/pkg-files.list)" == "" ]; then
@@ -8082,7 +8191,7 @@ update_menus() {                  # update menus, calls fixmenus, refreshes WM
   echo started > /tmp/pkg/proc/pkg/update_menus_busy
   fixmenus &>/dev/null
   # refresh JWM menus if using JWM window manager
-  [ "`which jwm`" != "" ] && [ "`ps -e | grep jwm`" != "" ] && jwm -reload &>/dev/null
+  [ "`which jwm`" != "" ] && [ "`pidof jwm`" != "" ] && jwm -reload &>/dev/null
   rm /tmp/pkg/proc/pkg/update_menus_busy 2>/dev/null
   return 0
 }
