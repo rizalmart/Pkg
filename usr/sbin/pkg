@@ -26,16 +26,16 @@ APPNAME="Pkg"
 APPVER="2.0"
 
 #Path settings
-BB_PATH="/usr/libexec/static/busybox" #custom busybox path
+#BB_PATH="/usr/libexec/static/busybox" #custom busybox path
 #WGET_PATH="/usr/libexec/static/wget"
-GREP_PATH="/usr/libexec/static/grep"
-SED_PATH="/usr/libexec/static/sed"
-CP_PATH="/usr/libexec/static/cp"
+#GREP_PATH="/usr/libexec/static/grep"
+#SED_PATH="/usr/libexec/static/sed"
+#CP_PATH="/usr/libexec/static/cp"
 #FILECMD_PATH="/usr/libexec/static/file"
 
 LAYEREDFS_FOLDER=/initrd
 
-PKG_DATA_DIR=/var/local/pkg
+PKG_DATA_DIR=/root/.pkg
 
 REPO_DIR=/var/packages      # where the repo files live
 
@@ -58,8 +58,16 @@ export LAYEREDFS_FOLDER
 export BUILTIN_PKG_DIR
 
 # get current locale settings
-USER_LANG=$LANG
-USER_LC_ALL=$LC_ALL
+export USER_LANG=$LANG
+export USER_LC_ALL=$LC_ALL
+
+LAYERED_FS_TYPE="$(mount 2>/dev/null | grep " on / " | cut -f 5 -d ' ')"
+
+if [ "$LAYERED_FS_TYPE" != "aufs" ] && [ "$LAYERED_FS_TYPE" != "overlay" ]; then
+ LAYERED_FS_TYPE=""
+fi
+
+export LAYERED_FS_TYPE 
 
 if [ "$BB_PATH" != "" ] && [ -e $BB_PATH ]; then
 
@@ -91,7 +99,7 @@ export CP_PATH
 export WGET_PATH
 export FILECMD_PATH
 
-[ -z "$PATH" ] && export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
+[ -z "$PATH" ] && export PATH=/usr/lib/puppy/bin:/usr/lib/puppy/sbin:/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
 
 [ -z "$XDG_DATA_DIRS" ] && export XDG_DATA_DIRS=/usr/lib/puppy/share:/usr/share:/usr/local/share
 
@@ -101,40 +109,21 @@ if [ "$LD_LIBRARY_PATH" == "" ]; then
 	LD_LIBRARY_PATH64="/lib:/lib64:/lib/x86_64-linux-gnu:/usr/lib:/usr/lib64:/usr/lib/x86_64-linux-gnu:/usr/local/lib:/usr/local/lib64:/usr/local/lib/x86_64-linux-gnu:/root/my-applications/lib"
 	LD_LIBRARY_PATH64_COMPAT="/lib32:/libx32:/lib/i386-linux-gnu:/usr/lib32:/usr/libx32:/usr/lib/i386-linux-gnu:/usr/local/lib32:/usr/local/libx32:/usr/local/lib/i386-linux-gnu"
 	
-	if [ -f /lib64/libc.so.6 ] || [ -f /lib/x86_64-linux-gnu/libc.so.6 ]; then #slackware64
+	if [ -e /lib64/libc.so.6 ] || [ -e /lib/x86_64-linux-gnu/libc.so.6 ]; then #slackware64
 		LD_LIBRARY_PATH="${LD_LIBRARY_PATH64}:${LD_LIBRARY_PATH64_COMPAT}"
-	elif [ -f /lib/libc.so.6 ]; then
-	  if [ -L /lib/libc.so.6 ]; then
-	  
-	    ORIGFILE="$(readlink /lib/libc.so.6 2>/dev/null)"
-	    
-	    if [ "$(echo "$ORIGFILE" | grep '/')" == "" ]; then
-	     ORIGFILE="/lib/${ORIGFILE}"
-	    else
-	     ORIGFILE="$(realpath $ORIGFILE)"
-	    fi
-	    
-	    if [ "$(file "$ORIGFILE" | grep "64-bit")" != "" ]; then
-	     LD_LIBRARY_PATH="${LD_LIBRARY_PATH64}:${LD_LIBRARY_PATH64_COMPAT}"
-	    else
-	     LD_LIBRARY_PATH="$LD_LIBRARY_PATH32"
-	    fi
-	    
-	  else
-	   	if [ "$(file /lib/libc.so.6 | grep "64-bit")" != "" ]; then
-	     LD_LIBRARY_PATH="${LD_LIBRARY_PATH64}:${LD_LIBRARY_PATH64_COMPAT}"
-	    else
-	     LD_LIBRARY_PATH="$LD_LIBRARY_PATH32"
-	    fi
-	  fi
+	elif [ -e /libx32/libc.so.6 ] || [ -e /lib32/libc.so.6 ] || [ -e /lib/i386-linux-gnu/libc.so.6 ]; then #slackware64
+		LD_LIBRARY_PATH="${LD_LIBRARY_PATH32}"
 	else
-		LD_LIBRARY_PATH="$LD_LIBRARY_PATH32"
+	  if [ "$(uname -m | grep "64")" != "" ]; then
+	   LD_LIBRARY_PATH="${LD_LIBRARY_PATH64}:${LD_LIBRARY_PATH64_COMPAT}"
+	  else
+	   LD_LIBRARY_PATH="${LD_LIBRARY_PATH32}"
+	  fi
 	fi
 
 	export LD_LIBRARY_PATH
 
 fi
-
 
 
 #run as root only
@@ -158,7 +147,6 @@ EDITOR=${EDITOR:-vi}       # just in case
 PAGER=${PAGER:-less}       # just in case
 CURDIR="${PWD}"            # get current dir, before cd to WORKDIR
 
-
 if [ -L /bin ] || [ -L /lib ] || [ -L /lib64 ] || [ -L /lib32 ] || [ -L /libx32 ] || [ -L /sbin ]; then
  export NEW_FHS="y"
 fi
@@ -172,6 +160,7 @@ green="\e[32m"; red="\e[91m"; magenta="\e[95m"; lightblue="\e[36m"; yellow="\e[9
 [ -z "$ASK"   ] && PLUGIN_ASK="${ASK:-false}"           # if true, plugins will respect --ask, will making sure Pkg itself still only "asks once"
 [ -z "$QUIET" ] && QUIET=false                          # if true, hide output that doesnt log well in Xdialog, Gtkdialog, etc
 [ -z "$FORCE" ] && FORCE=false                          # if true, force (re)install/remove pkgs. Overridden by --force
+[ -z "$NO_BLOAT" ] && NO_BLOAT=false                    # if true, dev files, docs, and some locales will be deleted
 [ -z "$HIDE_INSTALLED" ] && export HIDE_INSTALLED=false # if true, hide installed pkgs from pkg searches (-n, -na, -ss, -ssa)
 [ -z "$HIDE_BUILTINS"  ] && export HIDE_BUILTINS=true   # if true, remove builtins pkgs from dep lists, dont download/install them
 [ -z "$HIDE_USER_PKGS" ] && export HIDE_USER_PKGS=true  # if true, hide user installed pkgs from dep lists, dont download/install them
@@ -232,8 +221,6 @@ cleanup(){
 }
 
 trap 'cleanup ${LINENO:-none} $?' EXIT INT TERM
-
-
 
 #080413 make sure all config files are present, copy from /etc if need be
 if [ ! -f "${PKGRC}" ];then
@@ -447,6 +434,174 @@ set -a
 
 # utility funcs
 
+write_deb_spec(){
+	
+EXTRACTED_DIR="$1"	
+PKGBASE2="$2"
+
+PKGSIZE2=$(LANG=C du -s -k ${EXTRACTED_DIR}/${PKGBASE2} 2>/dev/null | cut -f1)
+
+if [ ! -f ${EXTRACTED_DIR}/DEBIAN/control ]; then
+ return
+fi
+
+#pkgname|nameonly|version|pkgrelease|category|size|path|fullfilename|dependencies|description|
+
+xDLPKG_NAME1="$(basename "$PKGBASE2" .deb)"
+
+PKGCAT="$(cat ${EXTRACTED_DIR}/DEBIAN/control)"
+
+pkgname="${xDLPKG_NAME1}"
+nameonly=`echo "$PKGCAT" | grep "Package:" | cut -f 2 -d ':' | xargs`
+version=`echo "$PKGCAT" | grep "Version:" | cut -f 2 -d ':' | xargs | cut -f 1 -d '-'`
+pkgrelease=`echo "$PKGCAT" | grep "Version:" | cut -f 2 -d ':' | xargs | cut -f 2 -d '-'`
+[ "$pkgrelease" == "" ] && pkgrelease=1
+category=""
+size="${PKGSIZE2}K"
+path=""	
+fullfilename=${PKGBASE2}
+description=`echo "$PKGCAT" | grep "Description:" | cut -f 2 -d ':' | xargs | head -1`
+dependencies=""
+depends=`echo "$PKGCAT" | grep "Depends:" | cut -f 2 -d ':' | xargs | sed -e "s#,\ #\ #g" -e "s#(#|#g" -e "s#\ |#|#g" -e "s#\ [0-9]##g"` 
+
+for dep1 in $depends
+do
+depname=`echo $dep1 | cut -f 1 -d '|'`
+ if [ "$dependencies" == "" ]; then
+ dependencies="+$depname"
+ else
+ dependencies="$dependencies,+$depname"
+ fi
+done 
+
+echo "$pkgname|$nameonly|$version|$pkgrelease|$category|$size|$path|$fullfilename|$dependencies|$description|" > ${EXTRACTED_DIR}/pet.specs
+	
+}
+
+write_arch_spec(){
+	
+EXTRACTED_DIR="$1"	
+PKGBASE2="$2"
+EXT2="$3"
+
+PKGSIZE2=$(LANG=C du -s -k ${EXTRACTED_DIR}/${PKGBASE2} 2>/dev/null | cut -f1)
+
+if [ ! -f ${EXTRACTED_DIR}/.PKGINFO ]; then
+return
+fi
+
+xDLPKG_NAME="$(basename "$PKGBASE2" "$EXT2")"
+
+PKGCAT="$(cat ${EXTRACTED_DIR}/.PKGINFO)"
+
+pkgname="${xDLPKG_NAME}"
+nameonly=`echo "$PKGCAT" | grep "pkgname =" | cut -f 2 -d '=' | xargs`
+version=`echo "$PKGCAT" | grep "pkgver =" | cut -f 2 -d '=' | xargs | cut -f 1 -d '-'`
+pkgrelease=`echo "$PKGCAT" | grep "pkgver =" | cut -f 2 -d '=' | xargs | cut -f 2 -d '-'`
+category=""
+size="${PKGSIZE2}K"
+path=""	
+fullfilename=${PKGBASE2}
+description=`echo "$PKGCAT" | grep "pkgdesc" | cut -f 2 -d '=' | xargs`
+dependencies=""
+
+for dep1 in `echo "$PKGCAT" | grep "depend =" | sed "s#\ =\ #=#g"`
+do
+depname=`echo $dep1 | cut -f 2 -d '=' | xargs`
+ if [ "$dependencies" == "" ]; then
+ dependencies="+$depname"
+ else
+ dependencies="$dependencies,+$depname"
+ fi
+done 
+
+echo "$pkgname|$nameonly|$version|$pkgrelease|$category|$size|$path|$fullfilename|$dependencies|$description|" > ${EXTRACTED_DIR}/pet.specs	
+	
+}
+
+write_slack_spec(){
+
+EXTRACTED_DIR="$1"	
+PKGBASE2="$2"
+EXT2="$3"
+
+PKGSIZE2=$(LANG=C du -s -k ${EXTRACTED_DIR}/${PKGBASE2} 2>/dev/null | cut -f1)
+	
+if [ ! -f ${EXTRACTED_DIR}/install/slack-desc ]; then
+ return
+fi
+
+xDLPKG_NAME="$(basename "$PKGBASE2" "$EXT2")"
+
+pkgname="${xDLPKG_NAME}"
+nameonly=`cat ${EXTRACTED_DIR}/install/slack-desc | grep ": " | head -n 1 | cut -f 1 -d ":" | xargs`
+
+[ "$nameonly" == "" ] && nameonly="`echo -n "$pkgname" | sed 's#-[0-9].*##'`"
+[ "$DB_version" == "" ] && DB_version="`echo -n "$pkgname" | grep -o '\-[0-9].*' | sed -e 's%^\-%%' -e 's%ponce%%' -e 's%_slonly%%' -e 's%_microlinux%%' -e 's%\-i[3456]86%%' -e 's%\-x86_64%%' -e 's%.*\-noarch%%' -e 's%\.t[bxg]z%%' | cut -f 1 -d '-'`"
+[ "$DB_pkgrelease" == "" ] && DB_pkgrelease="`echo -n "$pkgname" | sed -e 's%ponce%%' -e 's%_slonly%%' -e 's%_microlinux%%' -e 's%.*\-i[3456]86%%' -e 's%.*\-x86_64%%' -e 's%.*\-amd64%%' -e 's%.*\-noarch%%' -e 's%^\-%%' | cut -f 1 -d '.'`"
+
+version="$DB_version"
+pkgrelease="$DB_pkgrelease"
+category=""
+size="${PKGSIZE2}K"
+path=""	
+fullfilename=${PKGBASE2}
+description=`cat ${EXTRACTED_DIR}/install/slack-desc | grep ": " | head -n 1 | cut -f 2 -d ":" | xargs | cut -f 2 -d '(' | sed -e "s#)##g"`
+
+dependencies=""
+
+if [ -f ${EXTRACTED_DIR}/install/slack-required ]; then
+
+for dep1 in `cat ${EXTRACTED_DIR}/install/slack-required | sed -e "s#| #\n##g" | cut -f 1 -d ' '`
+do
+ if [ "$dependencies" == "" ]; then
+ dependencies="+$dep1"
+ else
+ dependencies="$dependencies,+$dep1"
+ fi
+done 
+
+fi
+
+echo "$pkgname|$nameonly|$version|$pkgrelease|$category|$size|$path|$fullfilename|$dependencies|$description|" > ${EXTRACTED_DIR}/pet.specs	
+	
+}
+
+write_rpm_spec(){
+
+EXTRACTED_DIR="$1"	
+PKGBASE2="$2"
+
+PKGSIZE2=$(LANG=C du -s -k ${EXTRACTED_DIR}/${PKGBASE2} 2>/dev/null | cut -f1)
+	
+if [ ! -f ${EXTRACTED_DIR}/rpm-info ]; then
+ return
+fi
+
+xDLPKG_NAME="$(basename "$PKGBASE2" ".rpm")"
+
+PKGCAT="$(cat ${EXTRACTED_DIR}/rpm-info)"
+
+pkgname="${xDLPKG_NAME}"
+nameonly=`echo "$PKGCAT" | grep "Name" | grep ":" | cut -f 2 -d ':' | xargs`
+[ "$nameonly" == "" ] && nameonly="$pkgname"
+version=`echo "$PKGCAT" | grep "Version" | grep ":" | cut -f 2 -d ':' | xargs`
+pkgrelease=`echo "$PKGCAT" | grep "Release" | grep ":" | cut -f 2 -d ':' | xargs`
+category=`echo "$PKGCAT" | grep "Group" | grep ":" | cut -f 2 -d ':' | xargs`
+size="${PKGSIZE2}K"
+path=""	
+fullfilename=${PKGBASE2}
+description=`echo "$PKGCAT" | grep "Summary" | grep ":" | cut -f 2 -d ':' | xargs`
+
+dependencies=""
+
+echo "$pkgname|$nameonly|$version|$pkgrelease|$category|$size|$path|$fullfilename|$dependencies|$description|" > ${EXTRACTED_DIR}/pet.specs	
+
+rm -f ${EXTRACTED_DIR}/rpm-info
+	
+}
+
+
 print_usage(){                    # print usage text. Requires $1, a valid Pkg cmd FUNCLIST
 
   local examples_file=/usr/share/pkg/docs/examples.txt
@@ -521,7 +676,6 @@ func_list(){                      # list all functions available in this script 
 
 
 update_system_cache() {
-
   # $1 = PKGFILES [ex: ${REPO_DIR}/abiword.files]
   local PKGFILES=$1
 
@@ -1968,7 +2122,7 @@ dir2repo(){                       # create a native-Puppy repo from a dir of pac
     pkgnameonly="$(get_pkg_name_only "$pkgname")"
     pkgversion="$(get_pkg_version "$pkgname")"
     pkgcat="$(grep -m1 "|$pkgnameonly|" $REPO_DB_DIR/Packages-* | cut -f5 -d'|')"
-    pkgsize="$(du "$file" 2>/dev/null | cut -f1)K"
+    pkgsize="$(du -s -k "$file" 2>/dev/null | cut -f1)K"
     [ "$pkgsize" = "" ] && pkgsize="$(grep -m1 "|$pkgnameonly|" $REPO_DB_DIR/Packages-* | cut -f6 -d'|')"
     pkgdeps="$(grep -m1 "|$pkgnameonly|" $REPO_DB_DIR/Packages-* | cut -f9 -d'|')"
     # dont include deps if we're adding a combined package + plus deps (they have $CP_SUFFIX in the name)
@@ -1982,6 +2136,7 @@ dir2repo(){                       # create a native-Puppy repo from a dir of pac
 
     # add this package to the repo file
     echo "$pkgname|$pkgnameonly|$pkgversion||${pkgcat:-BuildingBlock}|$pkgsize|$repopath|$filename|$pkgdeps|${pkgdesc:-No description}|$pkgdistro|$pkgdistroversion|" >> "$repo_file"
+  
   done
 
   if [ ! -f "$repo_file" ];then
@@ -3937,14 +4092,19 @@ pkg_unpack(){                     # extract/unpack $1 to current dir FUNCLIST
     deb)
       mkdir "$PKGNAME" 2>/dev/null
       rm -rf "${PKGNAME:-?}"/* 2>/dev/null
+      
+      #echo "cmd: dpkg-deb -x $PKGFILE $PKGNAME"
       dpkg-deb -x "$PKGFILE" "$PKGNAME"    # extracts main pkg contents
+      
       result=$?
       dpkg-deb -e "$PKGFILE" "$PKGNAME"/DEBIAN # extracts deb control files
+      
       if [ $result -eq 0 ];then
         echo -e "${green}Extracted${endcolour}: ${magenta}$(basename $PKGFILE)${endcolour}"
       else
         error -e "${red}Error${endcolour}: Cannot extract $PKGFILE"
       fi
+      
       return $result
       ;;
 
@@ -5281,8 +5441,11 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
 
       rmdir "${CURDIR}/${PKGNAME}" &>/dev/null
       mkdir -p "${CURDIR}/${PKGNAME}"
+      
       [ ! -f "$PKGFILE" ] && PKGFILE="$(find ${CURDIR} -xdev -maxdepth 1 -type f -name "${PKGNAME}*.deb")"
+      
       cp "${PKGFILE}" "${CURDIR}/${PKGNAME}/${PKGNAME}.deb" || exit 4
+                 
       cd "${CURDIR}/${PKGNAME}/" || exit 1
 
       if [ -f "${CURDIR}/${PKGNAME}/${PKGNAME}.deb" ];then
@@ -5292,11 +5455,23 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
           | cut -f6 -d' ' \
           | grep -v '^$' > ${PKG_FILES_DIR}/${PKGNAME}.files
       fi
-
-      dpkg-deb -x ${CURDIR}/${PKGNAME}.deb ${CURDIR}/${PKGNAME}
+	       	
+      dpkg-deb -x ${CURDIR}/${PKGNAME}/${PKGNAME}.deb ${CURDIR}/${PKGNAME}
+ 
       [ $? -ne 0 ] && exit 1
+      
+      
+      if [ "$(echo "$DISTRO_BINARY_COMPAT" | grep -E "ubuntu|devuan|debian")" == "" ]; then
+       dpkg-deb -e "${CURDIR}/${PKGNAME}/${PKGNAME}.deb" "${CURDIR}/${PKGNAME}/DEBIAN"
+       write_deb_spec "${CURDIR}/${PKGNAME}" "${PKGNAME}.deb"
+       rm -rf "${CURDIR}/${PKGNAME}/DEBIAN" 2>/dev/null
+      fi
+      
       [ -d /DEBIAN ] && rm -rf /DEBIAN #130112 precaution.
       dpkg-deb -e "${CURDIR}/${PKGNAME}/${PKGNAME}.deb" /DEBIAN #130112 extracts deb control files to dir /DEBIAN. may have a post-install script, see below.
+      
+      
+      
       rm "${PKGNAME}.deb"
 
       cd - 1>/dev/null || exit 1
@@ -5313,7 +5488,19 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
         *tlz|*tar.lzma) lzma -dc "${PKGNAME}.$pkg_ext"  | tar -xf - 2> $TMPDIR/$SELF-cp-errlog ;;
         *) tar -xf "${PKGNAME}.$pkg_ext" 2> $TMPDIR/$SELF-cp-errlog ;;
       esac
+      
       tar -tf "${PKGNAME}.$pkg_ext" > ${PKG_FILES_DIR}/${PKGNAME}.files
+      
+      if [ -e "${CURDIR}/${PKGNAME}/.PKGINFO" ]; then
+        if [ "$(echo "$DISTRO_BINARY_COMPAT" | grep -E "arch|endevour|garuda")" == "" ]; then
+          write_arch_spec "${CURDIR}/${PKGNAME}" "${PKGNAME}.$pkg_ext" ".$pkg_ext"
+        fi
+      elif [ -e "${CURDIR}/${PKGNAME}/install/slack-desc" ]; then
+        if [ "$(echo "$DISTRO_BINARY_COMPAT" | grep -E "slackware")" == "" ]; then
+          write_slack_spec "${CURDIR}/${PKGNAME}" "${PKGNAME}.$pkg_ext" ".$pkg_ext"
+        fi
+      fi
+      
       rm "${PKGNAME}.$pkg_ext"
       cd - 1>/dev/null || exit 1
     ;;
@@ -5325,6 +5512,13 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
       [ $? -ne 0 ] && exit 1
       PFILES="$($BB_PATH rpm -qpl "$PKGFILE")"
       [ $? -ne 0 ] && exit 1
+      
+      if [ "$(echo "$DISTRO_BINARY_COMPAT" | grep -E "redhat|hat|centos|fedora|rocky|alma|suse|clearos")" == "" ]; then
+       $BB_PATH rpm -qpi "$PKGFILE" > "${CURDIR}/rpm-info"
+	   write_rpm_spec "${CURDIR}" "${PKGNAME}.rpm"
+	   rm -f "${CURDIR}/rpm-info" 2>/dev/null
+      fi
+      
       echo "$PFILES" > ${PKG_FILES_DIR}/${PKGNAME}.files
       pkg_unpack "$PKGFILE" 1>/dev/null
     ;;
@@ -5357,6 +5551,7 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
    echo "Fixing file duplicates..."
    find "$(pwd)" -type d | xargs -i /usr/share/pkg/fix-duplicates '{}' > /dev/null
   fi
+  
   
   # now extract pkg contents to /
   
@@ -5463,7 +5658,7 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
   rm -R "${PKGNAME:-?}/" 2>/dev/null || echo "${yellow}Warning:${endcolour} Cannot remove directory '${PKGNAME}/'." #150213
 
   #flush unionfs cache, so files in pup_save layer will appear "on top"...
-  if [ "$DIRECTSAVEPATH" != "" ];then
+  if [ "$DIRECTSAVEPATH" != "" ] && [ "$LAYERED_FS_TYPE" == "aufs" ]; then
    #but first, clean out any bad whiteout files...
    # 22sep10 shinobar: bugfix was not working clean out whiteout files
    find ${PUP_WRITE_LAYER} -xdev -type f -name .wh.\*  -printf '/%P\n'|
@@ -5492,6 +5687,36 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
    $BB_PATH mount -t aufs -o remount,udba=reval unionfs / #remount with faster evaluation mode.
    [ $? -ne 0 ] && logger -s -t "pkg" "Failed to remount aufs / with udba=reval"
    sync
+ 
+ elif [ "$DIRECTSAVEPATH" != "" ] && [ "$LAYERED_FS_TYPE" == "overlay" ]; then
+ 
+   #but first, clean out any bad whiteout files...
+   # 22sep10 shinobar: bugfix was not working clean out whiteout files
+   find ${PUP_WRITE_LAYER} -xdev -type c -printf '/%P\n' | grep -v '/dev/' |
+   while read ONEWHITEOUT
+   do
+    grep -q -x "$ONEWHITEOUT" ${PKG_FILES_DIR}/${PKGNAME}.files && rm -f "${PUP_WRITE_LAYER}/$ONEWHITEOUT"
+   done
+   
+   RW_TMPFS="$(mount 2>/dev/null | grep -m 1 "${PUP_WRITE_LAYER}" | grep "tmpfs")"
+   
+   # /usr/local/petget/removepreview.sh when uninstalling a pkg,
+   # may have copied a file from sfs-layer to top, check...
+   # shellcheck disable=SC2002
+   while IFS= read -r ONESPEC
+   do
+    [ "$ONESPEC" = "" ] && continue #precaution.
+    if [ ! -d "$ONESPEC" ];then
+     if [ -e "${PUP_WRITE_LAYER}${ONESPEC}" ] &&  [ -e "${DIRECTSAVEPATH}${ONESPEC}" ] && [ "$RW_TMPFS" != "" ]; then 
+      rm -f "${PUP_WRITE_LAYER}${ONESPEC}"
+     fi
+    fi
+   done < ${PKG_FILES_DIR}/${PKGNAME}.files
+   
+   $BB_PATH mount -o remount /
+   
+   sync
+ 
   fi
 
   # get pkg size from local file, or repos
@@ -5608,6 +5833,7 @@ if [ -f $line ]; then
    if [ "$(grep -E "${slinkpt}\$" ${PKG_FILES_DIR}/${PKGNAME}.files)" == "" ]; then
 
       srcf="$(readlink "$slink" 2>/dev/null)"
+      
       [ "$(echo $srcf | grep "/")" != "" ] && srcf="$(realpath $srcf)"
 
       if [ "$srcf" != "" ]; then
@@ -5689,6 +5915,7 @@ echo "Running post-install hacks (2nd pass)..."
 	PKGDESC="$(echo "$DB_ENTRY" | cut -f 10 -d '|')"
 	PKGCAT="$(echo "$DB_ENTRY" | cut -f 5 -d '|')"
 	PKGREL="$(echo "$DB_ENTRY" | cut -f 4 -d '|')"
+	PKGSIZE3="$(echo "$DB_ENTRY" | cut -f 6 -d '|')"
 
 	#Look for package database for closest package information
 	if [ "$PKGDEP" == "" ] || [ "$PKGDESC" == "" ] || [ "$PKGCAT" == "" ]; then
@@ -5719,7 +5946,7 @@ echo "Running post-install hacks (2nd pass)..."
 	  nameonly="$(echo "$DB_ENTRY" | cut -f 2 -d '|')"
 	  version="$(echo "$DB_ENTRY" | cut -f 3 -d '|')"
 	  
-	  size="${PKGSIZE}"
+	  size="${PKGSIZE3}"
 	  path="$(echo "$DB_ENTRY" | cut -f 7 -d '|')"
 	  fullfilename="$(echo "$DB_ENTRY" | cut -f 8 -d '|')"
 	  compileddistro="$(echo "$DB_ENTRY" | cut -f 11 -d '|')"
@@ -5741,6 +5968,7 @@ echo "Running post-install hacks (2nd pass)..."
 	
 	#Build file database
 	if [ "$xpkgname" != "" ]; then
+	
 	 if [ "$installed_pkg" != "" ] || [ -e "${BUILTIN_PKG_DIR}/${xpkgname}" ]; then
 	 
 	  INSTALLEDPTRN2="$(echo "${installed_files}" | sed -e 's#\+#\\\+#g' -e 's#\-#\\\-#g' -e 's#\.#\\\.#g')"
@@ -5779,8 +6007,8 @@ echo "Running post-install hacks (2nd pass)..."
 				while IFS= read -r xline
 				do
 				 
-				 #lineptrn="$(echo "$xline" | sed -e 's#\/#\\\/#g' -e 's#\+#\\\+#g' -e 's#\-#\\\-#g' -e 's#\.#\\\.#g')"
 				 lineptrn=`echo $xline`
+				 #lineptrn="$(echo "$xline" | sed -e 's#\/#\\\/#g' -e 's#\+#\\\+#g' -e 's#\-#\\\-#g' -e 's#\.#\\\.#g')"
 				
 				 #Check if the file was a part of the newly installed package
 				 if [ "$(grep -m 1 "$lineptrn" ${PKG_FILES_DIR}/${PKGNAME}.files)" == "" ] && [ "$(grep -m 1 "$lineptrn" /tmp/pkg-files.list)" == "" ]; then
@@ -5837,8 +6065,8 @@ echo "Running post-install hacks (2nd pass)..."
 		 while IFS= read -r xline
 		 do
 		 
-		  #lineptrn="$(echo "$xline" | sed -e 's#\/#\\\/#g' -e 's#\+#\\\+#g' -e 's#\-#\\\-#g' -e 's#\.#\\\.#g')"
 		  lineptrn=`echo $xline`
+		  #lineptrn="$(echo "$xline" | sed -e 's#\/#\\\/#g' -e 's#\+#\\\+#g' -e 's#\-#\\\-#g' -e 's#\.#\\\.#g')"
 		 
 		  #Check if the file was a part of the newly installed package
 		  if [ "$(grep -m 1 "$lineptrn" ${PKG_FILES_DIR}/${PKGNAME}.files)" == "" ] && [ "$(grep -m 1 "$lineptrn" /tmp/pkg-files.list)" == "" ]; then
@@ -5871,6 +6099,38 @@ echo "Running post-install hacks (2nd pass)..."
 
   if [ "$(is_installed_pkg $PKGNAME)" != true ] || [ ! -s ${PKG_FILES_DIR}/${PKGNAME}.files ];then
     error "$PKGNAME may not have installed correctly."
+  fi
+  
+  
+  if [ "$NO_BLOAT" == "true" ]; then
+  
+    echo "Trimming the fat..."
+  
+    MAINLANG="$(echo "$LANG" | cut -f 1 -d '.')"
+    
+    cat ${PKG_FILES_DIR}/${PKGNAME}.files | grep "/share/locale" | grep -vE '\/'$MAINLANG'|locale$|locale\/$' | xargs -i rm -rf '{}'
+  
+    cat ${PKG_FILES_DIR}/${PKGNAME}.files | grep "/usr/doc/" | grep -vE '\/doc\/cups|\/doc\/$' | xargs -i rm -rf '{}' 2>/dev/null
+    
+	cat ${PKG_FILES_DIR}/${PKGNAME}.files | grep "/usr/share/doc/" | grep -vE '\/doc\/$|\/doc\/cups|\/doc\/puppy|\/doc\/grub2config' | xargs -i rm -rf '{}' 2>/dev/null
+  
+    cat ${PKG_FILES_DIR}/${PKGNAME}.files | grep -E '*\.la$' | xargs -i rm -f '{}' 2>/dev/null
+    
+    cat ${PKG_FILES_DIR}/${PKGNAME}.files | grep -E '*\.a$' | xargs -i rm -f '{}' 2>/dev/null
+   
+	 for fld3 in man info license include src help
+	 do 
+	  cat ${PKG_FILES_DIR}/${PKGNAME}.files | grep '/'$fld3'/' | grep -vE ''$fld3'$|'$fld3'\/$' | xargs -i rm -rf '{}'
+	 done   
+	
+	cat ${PKG_FILES_DIR}/${PKGNAME}.files | grep "gtk-doc" | xargs -i rm -rf '{}' 2>/dev/null    
+    
+    cat ${PKG_FILES_DIR}/${PKGNAME}.files | grep "gir-1.0" | xargs -i rm -rf '{}' 2>/dev/null    
+    
+    cat ${PKG_FILES_DIR}/${PKGNAME}.files | grep "/lib/.build-id" | xargs -i rm -rf '{}' 2>/dev/null
+    
+    cat ${PKG_FILES_DIR}/${PKGNAME}.files | grep "/share/gnome/help" | xargs -i rm -rf '{}' 2>/dev/null        
+   
   fi
   
   
@@ -6634,25 +6894,35 @@ pkg_uninstall(){                  # remove an installed package ($1) FUNCLIST
     [ -e "$LINE" ] && REMFILE="yes"
     if [ "$REMFILE" = "yes" ];then
       if [ ! -d "$LINE" ];then
-        if [ -f  "${LAYEREDFS_FOLDER}${SAVE_LAYER}${LINE}" ] || [ -L "${LAYEREDFS_FOLDER}${SAVE_LAYER}${LINE}" ];then
+        if [ "$PUPMODE" != "2" ] && [ "$LAYERED_FS_TYPE" != "" ];then
+        
           # deleting the file on the top layer places a ".wh" whiteout file, that hides the original file.
           # what we want is to remove the installed file, and restore the original pristine file...
+         if [ -f  "${LAYEREDFS_FOLDER}${SAVE_LAYER}${LINE}" ] || [ -L "${LAYEREDFS_FOLDER}${SAVE_LAYER}${LINE}" ]; then 
           
-          
-         [ -e "${PUP_WRITE_LAYER}${LINE}" ] && rm -f "${PUP_WRITE_LAYER}${LINE}"
-         [ -L "${PUP_WRITE_LAYER}${LINE}" ] && rm -f "${PUP_WRITE_LAYER}${LINE}"
-                  
-         [ -e "${LAYEREDFS_FOLDER}${SAVE_LAYER}${LINE}" ] && rm -f "${LAYEREDFS_FOLDER}${SAVE_LAYER}${LINE}"    
-         [ -L "${LAYEREDFS_FOLDER}${SAVE_LAYER}${LINE}" ] && rm -f "${LAYEREDFS_FOLDER}${SAVE_LAYER}${LINE}"    
- 
-         BN="`basename "$LINE"`"
-         DN="`dirname "$LINE"`"
-         
-         #The file might be builtin just show the builtin files on top layer
-         [ -e "${LAYEREDFS_FOLDER}${SAVE_LAYER}${DN}/.wh.${BN}" ] && rm -f "${LAYEREDFS_FOLDER}${SAVE_LAYER}${DN}/.wh.${BN}"
-         [ -e "${PUP_WRITE_LAYER}${DN}/.wh.${BN}" ] && rm -f "${PUP_WRITE_LAYER}${DN}/.wh.${BN}"
-          
+			 [ -e "${PUP_WRITE_LAYER}${LINE}" ] && rm -f "${PUP_WRITE_LAYER}${LINE}"
+			 [ -L "${PUP_WRITE_LAYER}${LINE}" ] && rm -f "${PUP_WRITE_LAYER}${LINE}"
+					  
+			 [ -e "${LAYEREDFS_FOLDER}${SAVE_LAYER}${LINE}" ] && rm -f "${LAYEREDFS_FOLDER}${SAVE_LAYER}${LINE}"    
+			 [ -L "${LAYEREDFS_FOLDER}${SAVE_LAYER}${LINE}" ] && rm -f "${LAYEREDFS_FOLDER}${SAVE_LAYER}${LINE}"    
+	 
+			 BN="`basename "$LINE"`"
+			 DN="`dirname "$LINE"`"
+			 
+			 #The file might be builtin just show the builtin files on top layer
+			 if [ "$LAYERED_FS_TYPE" == "aufs" ]; then
+			  [ -e "${LAYEREDFS_FOLDER}${SAVE_LAYER}${DN}/.wh.${BN}" ] && rm -f "${LAYEREDFS_FOLDER}${SAVE_LAYER}${DN}/.wh.${BN}"
+			  [ -e "${PUP_WRITE_LAYER}${DN}/.wh.${BN}" ] && rm -f "${PUP_WRITE_LAYER}${DN}/.wh.${BN}"
+             elif [ "$LAYERED_FS_TYPE" == "overlay" ]; then
+               if [ "$(echo $DN | grep '/dev')" == "" ]; then
+                [ -e "${LAYEREDFS_FOLDER}${SAVE_LAYER}${DN}/${BN}" ] && rm -f "${LAYEREDFS_FOLDER}${SAVE_LAYER}${DN}/${BN}"
+			    [ -e "${PUP_WRITE_LAYER}${DN}/${BN}" ] && rm -f "${PUP_WRITE_LAYER}${DN}/${BN}"
+               fi
+             fi
+        
+         fi
          #cp -af "${LAYEREDFS_FOLDER}/pup_ro2${LINE}" "$LINE"
+         
         else
           rm -f "$LINE" &>/dev/null
         fi
@@ -6661,8 +6931,9 @@ pkg_uninstall(){                  # remove an installed package ($1) FUNCLIST
     fi
   done
   
+  [ "$LAYERED_FS_TYPE" == "overlay" ] && $BB_PATH mount -o remount /
   
-  if [ "$PUPMODE" != "" ] && [ "$PUPMODE" != "2" ] && [ -f "$BUILTIN_PKG_DIR/$PKGNAME_ONLY" ]; then
+  if [ "$PUPMODE" != "" ] && [ "$PUPMODE" != "2" ] && [ -f "$BUILTIN_PKG_DIR/$PKGNAME_ONLY" ] && [ "$LAYERED_FS_TYPE" != "" ]; then
     
      echo "Restoring builtin package..."
     
@@ -6670,12 +6941,22 @@ pkg_uninstall(){                  # remove an installed package ($1) FUNCLIST
      do 
        bname="$(basename $line)"
        dname="$(dirname $line)"
-       [ -e "${PUP_WRITE_LAYER}${dname}/.wh.${bname}" ] && rm -f "${PUP_WRITE_LAYER}${dname}/.wh.${bname}" 2>/dev/null
-       [ -e "${DIRECTSAVEPATH}${dname}/.wh.${bname}" ] && rm -f "${DIRECTSAVEPATH}${dname}/.wh.${bname}" 2>/dev/null        
+       if [ "$LAYERED_FS_TYPE" == "aufs" ]; then
+        [ -e "${PUP_WRITE_LAYER}${dname}/.wh.${bname}" ] && rm -f "${PUP_WRITE_LAYER}${dname}/.wh.${bname}" 2>/dev/null
+        [ -e "${DIRECTSAVEPATH}${dname}/.wh.${bname}" ] && rm -f "${DIRECTSAVEPATH}${dname}/.wh.${bname}" 2>/dev/null        
+       elif [ "$LAYERED_FS_TYPE" == "overlay" ]; then
+        if [ "$(echo $dname | grep '/dev')" == "" ]; then
+         [ -c "${PUP_WRITE_LAYER}${dname}/${bname}" ] && rm -f "${PUP_WRITE_LAYER}${dname}/${bname}" 2>/dev/null
+         [ -c "${PUP_WRITE_LAYER}${dname}/${bname}" ] && rm -f "${PUP_WRITE_LAYER}${dname}/${bname}" 2>/dev/null       
+        fi
+       fi
      done < "$BUILTIN_PKG_DIR/$PKGNAME_ONLY"
-    
+     
+     [ "$LAYERED_FS_TYPE" == "overlay" ] && $BB_PATH mount -o remount /
+   
   fi
   
+
   
   echo "Removing empty folders..."
   # go through again and remove any empty dirs...
@@ -6683,7 +6964,7 @@ pkg_uninstall(){                  # remove an installed package ($1) FUNCLIST
   do
     DELLEVELS=$(echo -n "$LINE" | sed -e 's/[^/]//g' | wc -c | sed -e 's/ //g')
     if [ $DELLEVELS -gt 2 ]; then
-      if [ "$(ls -1 "$LINE")" == "" ]; then
+      if [ -e $LINE ] && [ "$(ls -1 "$LINE")" == "" ]; then
        [ -d "${PUP_WRITE_LAYER}$LINE" ] && rmdir "${PUP_WRITE_LAYER}$LINE" 2>/dev/null
        [ -d "${DIRECTSAVEPATH}$LINE" ] && rmdir "${DIRECTSAVEPATH}$LINE" 2>/dev/null
       fi
@@ -6692,8 +6973,10 @@ pkg_uninstall(){                  # remove an installed package ($1) FUNCLIST
   
   [ "$(which rebuild-fs-dir)" != "" ] && rebuild-fs-dir
   
-  if [ "$PUPMODE" != "" ] && [ $PUPMODE -ne 2 ]; then
+  if [ "$PUPMODE" != "" ] && [ "$PUPMODE" != "2" ] && [ "$LAYERED_FS_TYPE" == "aufs" ]; then
    $BB_PATH mount -t aufs -o remount,udba=reval unionfs / #remount with faster evaluation mode.
+  elif [ "$PUPMODE" != "" ] && [ "$PUPMODE" != "2" ] && [ "$LAYERED_FS_TYPE" == "overlay" ]; then
+   $BB_PATH mount -o remount /
   fi
  
   # remove $PKGNAME from user-installed-packages
@@ -8362,6 +8645,7 @@ while [ $# != 0 ]; do # get all options ($# means all options)
         --ask|-a)         ASK=true ; PLUGIN_ASK=true; QTAG="?  (y/N)";;
         --quiet|-q)       QUIET=true ;;
         --force|-f)       FORCE=true ;;
+        --no-bloat)       NO_BLOAT=true ;;
         --no-color)       green='' red='' magenta='' lightblue='' yellow='' bold='' endcolour='' ;;
         --no-colour|-nc)  green='' red='' magenta='' lightblue='' yellow='' bold='' endcolour='' ;;
         '--configure='*)  PKG_CONFIGURE="$(echo "$x" | sed -e 's/^--configure=//')" ;;
@@ -8399,6 +8683,7 @@ while [ $# != 0 ]; do # get all options ($# means all options)
       --ask|-a)         ASK=true ; PLUGIN_ASK=true; QTAG="?  (y/N)";;
       --quiet|-q)       QUIET=true ;;
       --force|-f)       FORCE=true ;;
+      --no-bloat)       NO_BLOAT=true ;;
       --no-color)       green='' red='' magenta='' lightblue='' yellow='' bold='' endcolour='' ;;
       --no-colour|-nc)  green='' red='' magenta='' lightblue='' yellow='' bold='' endcolour='' ;;
       '--configure='*)  PKG_CONFIGURE="$(echo "$1" | sed -e 's/^--configure=//')" ;;
