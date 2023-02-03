@@ -33,6 +33,10 @@ APPVER="2.0"
 #CP_PATH="/usr/libexec/static/cp"
 #FILECMD_PATH="/usr/libexec/static/file"
 
+DB_SETUP_PATH="/usr/local/petget/0setup"
+
+CATEGORIES_FILE_PATH="/usr/local/petget/categories.dat"
+
 LAYEREDFS_FOLDER=/initrd
 
 PKG_DATA_DIR=/root/.pkg
@@ -56,6 +60,8 @@ export PKG_DATA_DIR
 export PUP_WRITE_LAYER
 export LAYEREDFS_FOLDER
 export BUILTIN_PKG_DIR
+export DB_SETUP_PATH
+export CATEGORIES_FILE_PATH
 
 # get current locale settings
 export USER_LANG=$LANG
@@ -279,8 +285,8 @@ esac
 PKG_REPO_UPDATE_METHOD=${PKG_REPO_UPDATE_METHOD:-standard}
 
 # shellcheck disable=SC2016
-if [ "$(grep -m1 'if \[ -d ./support -a -f ./DISTRO_SPECS -a -d ./rootfs-skeleton \] ;then' /usr/local/petget/0setup)" = "" ] && \
-   [ "$(grep -m1 'if \[ "$RUNNINGPUP" = "yes" \];then' /usr/local/petget/0setup)" != "" ]
+if [ "$(grep -m1 'if \[ -d ./support -a -f ./DISTRO_SPECS -a -d ./rootfs-skeleton \] ;then' $DB_SETUP_PATH)" = "" ] && \
+   [ "$(grep -m1 'if \[ "$RUNNINGPUP" = "yes" \];then' $DB_SETUP_PATH)" != "" ]
 then
   PKG_REPO_UPDATE_METHOD=legacy
 fi
@@ -1352,7 +1358,7 @@ get_pkg_category(){
   [ -z "$1" ] && return 1
 
   local category=''
-  category="$(grep -i -m1 " ${1} " /usr/local/petget/categories.dat \
+  category="$(grep -i -m1 " ${1} " $CATEGORIES_FILE_PATH \
     | cut -f1 -d'='  \
     | cut -f2- -d'_' \
     | tr '_' ';')"
@@ -2561,11 +2567,11 @@ update_repo(){                    # update the current repo from a file stored o
 
   # if using the newer version of 0setup (with no popup dialogs)
   if [ "$PKG_REPO_UPDATE_METHOD" = standard ];then
-    /usr/local/petget/0setup x &>$TMPDIR/update_repo_results
+    DISPLAY='' $DB_SETUP_PATH x | tee -a $TMPDIR/update_repo_results
   # else, if we're using an older version  of 0setup
   else
     # call 0setup.. the ENV options prevent popup windows, and need for user input
-    DISPLAY='' SETUPCALLEDFROM=ppm /usr/local/petget/0setup &>$TMPDIR/update_repo_results
+    DISPLAY='' SETUPCALLEDFROM=ppm $DB_SETUP_PATH | tee -a $TMPDIR/update_repo_results
   fi
 
   # if the repos updated ok
@@ -5514,9 +5520,19 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
       [ $? -ne 0 ] && exit 1
       
       if [ "$(echo "$DISTRO_BINARY_COMPAT" | grep -E "redhat|hat|centos|fedora|rocky|alma|suse|clearos")" == "" ]; then
-       $BB_PATH rpm -qpi "$PKGFILE" > "${CURDIR}/rpm-info"
+       
+       RPMCMD="$BB_PATH rpm"
+       
+       if [ "$($RPMCMD -qpi "$PKGFILE" | grep "^Name" | grep "(null)")" != "" ]; then
+        [ -e /usr/bin/rpm ] && RPMCMD="/usr/bin/rpm"
+       fi
+       
+       $RPMCMD -qpi "$PKGFILE" > "${CURDIR}/rpm-info"
+	   
 	   write_rpm_spec "${CURDIR}" "${PKGNAME}.rpm"
+	   
 	   rm -f "${CURDIR}/rpm-info" 2>/dev/null
+      
       fi
       
       echo "$PFILES" > ${PKG_FILES_DIR}/${PKGNAME}.files
@@ -5547,9 +5563,9 @@ pkg_install(){                    # install downloaded package ($1) FUNCLIST
   fi
 
 
-  if [ -e /usr/share/pkg/fix-duplicates ]; then
+  if [ -e /usr/libexec/pkg/fix-duplicates ]; then
    echo "Fixing file duplicates..."
-   find "$(pwd)" -type d | xargs -i /usr/share/pkg/fix-duplicates '{}' > /dev/null
+   find "$(pwd)" -type d | xargs -i /usr/libexec/pkg/fix-duplicates '{}' > /dev/null
   fi
   
   
@@ -5893,7 +5909,7 @@ echo "Running post-install hacks (2nd pass)..."
 
 #echo "$PKGNAME"
 
-[ -e /usr/share/pkg/hacks-postinstall2.sh ] && . /usr/share/pkg/hacks-postinstall2.sh "${PKG_FILES_DIR}/${PKGNAME}.files"
+[ -e /usr/libexec/pkg/hacks-postinstall2.sh ] && . /usr/libexec/pkg/hacks-postinstall2.sh "${PKG_FILES_DIR}/${PKGNAME}.files"
 
   #080917 - build woof compatible repo line .. #090817
 
